@@ -21,16 +21,20 @@ if [ -z "$SESSION_ID" ]; then
     exit 0
 fi
 
+# Derive project from CWD (git worktree root directory name)
+CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
+PROJECT=$(cd "$CWD" 2>/dev/null && git worktree list --porcelain 2>/dev/null | head -1 | sed 's/^worktree //' | xargs basename 2>/dev/null | tr '[:upper:]' '[:lower:]' || echo "general")
+PROJECT="${PROJECT:-general}"
+
 case "$MODE" in
     session-start)
-        CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
         DIR_NAME=$(basename "$CWD")
         python3 "$COMMS" auto-assign "$SESSION_ID" "$CWD"
         SENDER=$(python3 "$COMMS" resolve-name "$SESSION_ID")
-        python3 "$COMMS" post -s "$SENDER" "Session started in $DIR_NAME"
+        python3 "$COMMS" post -s "$SENDER" -p "$PROJECT" "Session started in $DIR_NAME"
         ;;
     session-end)
-        python3 "$COMMS" post -s "$SENDER" "Session ended"
+        python3 "$COMMS" post -s "$SENDER" -p "$PROJECT" "Session ended"
         ;;
     check)
         python3 "$COMMS" check "$SESSION_ID"
@@ -38,17 +42,16 @@ case "$MODE" in
     git-detect)
         CMD=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
         if echo "$CMD" | grep -qE '\bgit\s+(checkout|switch|branch|merge|rebase|push|pull|worktree)\b'; then
-            python3 "$COMMS" post -s "$SENDER" "git: $CMD"
+            python3 "$COMMS" post -s "$SENDER" -p "$PROJECT" "git: $CMD"
         fi
         # Auto-pull main repo after gh pr merge
         if echo "$CMD" | grep -qE '\bgh\s+pr\s+merge\b'; then
-            CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
             MAIN_REPO=$(cd "$CWD" && git worktree list --porcelain 2>/dev/null | head -1 | sed 's/^worktree //')
             if [ -n "$MAIN_REPO" ] && [ -d "$MAIN_REPO" ]; then
                 DEFAULT_BRANCH=$(cd "$MAIN_REPO" && git symbolic-ref --short HEAD 2>/dev/null || echo "")
                 if [ -n "$DEFAULT_BRANCH" ]; then
                     (cd "$MAIN_REPO" && git pull origin "$DEFAULT_BRANCH" 2>/dev/null) &
-                    python3 "$COMMS" post -s "$SENDER" "auto-pulled $DEFAULT_BRANCH in $(basename "$MAIN_REPO")/"
+                    python3 "$COMMS" post -s "$SENDER" -p "$PROJECT" "auto-pulled $DEFAULT_BRANCH in $(basename "$MAIN_REPO")/"
                 fi
             fi
         fi

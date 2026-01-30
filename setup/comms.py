@@ -5,8 +5,12 @@ Drop-in communication system that lets multiple Claude Code agents
 (each in its own git worktree) coordinate via a shared SQLite database.
 Messages are posted automatically by hooks and checked before each tool use.
 
+Messages are scoped by project. The project is auto-detected from the git
+repo name (the root worktree directory). Agents only see messages from their
+own project (plus 'general' broadcasts from the human).
+
 Usage:
-    python3 comms.py post -s "Web" "PR #12 ready for review"
+    python3 comms.py post -s "Web" -p "taskflow" "PR #12 ready for review"
     python3 comms.py check <session_id>
     python3 comms.py watch
     python3 comms.py chat
@@ -21,6 +25,7 @@ import argparse
 import json
 import os
 import sqlite3
+import subprocess
 import sys
 import time
 from datetime import datetime, timedelta
@@ -31,13 +36,55 @@ from pathlib import Path
 DB_PATH = Path(os.environ.get("COMMS_DB_PATH", Path.home() / ".claude" / "comms" / "messages.db"))
 
 # Agent names that can be auto-assigned from directory suffixes.
-# e.g. "taskflow-web" directory → "Web" agent name.
+# e.g. "taskflow-web" directory -> "Web" agent name.
 # Customize this list for your project's agents.
 FRIENDLY_NAMES = os.environ.get("COMMS_AGENT_NAMES", "Sysadmin,Web,API,Data").split(",")
 
 # Exact directory-to-name overrides. JSON string, e.g. '{"ops": "Sysadmin"}'
 _DIR_MAP_RAW = os.environ.get("COMMS_DIR_MAP", '{}')
 DIR_MAP = json.loads(_DIR_MAP_RAW)
+
+# Exact directory-to-project overrides. JSON string, e.g. '{"github": "myproject"}'
+_PROJECT_MAP_RAW = os.environ.get("COMMS_PROJECT_MAP", '{}')
+PROJECT_MAP = json.loads(_PROJECT_MAP_RAW)
+
+
+def detect_project(cwd):
+    """Derive project name from working directory.
+
+    Strategy:
+    1. Check COMMS_PROJECT_MAP for exact directory name match
+    2. Find the git repo root (main worktree) and use its directory name
+    3. Fall back to 'general'
+
+    Examples (assuming repo root is /path/to/taskflow):
+        /path/to/taskflow-web  -> taskflow
+        /path/to/taskflow-api  -> taskflow
+        /path/to/taskflow      -> taskflow
+    """
+    if not cwd:
+        return "general"
+    dirname = os.path.basename(cwd).lower()
+
+    # Exact overrides
+    if dirname in PROJECT_MAP:
+        return PROJECT_MAP[dirname]
+
+    # Derive from git worktree root
+    try:
+        result = subprocess.run(
+            ["git", "worktree", "list", "--porcelain"],
+            cwd=cwd, capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode == 0:
+            for line in result.stdout.splitlines():
+                if line.startswith("worktree "):
+                    root_dir = os.path.basename(line[9:]).lower()
+                    return root_dir
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+
+    return "general"
 
 
 def get_db():
@@ -50,6 +97,7 @@ def get_db():
         CREATE TABLE IF NOT EXISTS agents (
             session_id TEXT PRIMARY KEY,
             name TEXT NOT NULL UNIQUE,
+            project TEXT DEFAULT 'general',
             created TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now', 'localtime'))
         )
     """)
@@ -65,9 +113,16 @@ def get_db():
             timestamp TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now', 'localtime')),
             sender TEXT NOT NULL,
             channel TEXT DEFAULT 'general',
-            message TEXT NOT NULL
+            message TEXT NOT NULL,
+            project TEXT DEFAULT 'general'
         )
     """)
+    # Migration for existing DBs without project columns
+    for table in ("agents", "messages"):
+        try:
+            conn.execute(f"SELECT project FROM {table} LIMIT 0")
+        except sqlite3.OperationalError:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN project TEXT DEFAULT 'general'")
     conn.commit()
     return conn
 
@@ -84,16 +139,27 @@ def resolve_name(session_id):
     return f"agent-{session_id[:8]}"
 
 
+def resolve_project(session_id):
+    """Return the project for a session_id, or 'general' if unknown."""
+    conn = get_db()
+    row = conn.execute("SELECT project FROM agents WHERE session_id = ?", (session_id,)).fetchone()
+    if not row:
+        row = conn.execute("SELECT project FROM agents WHERE ? LIKE session_id || '%'", (session_id,)).fetchone()
+    conn.close()
+    return row[0] if row and row[0] else "general"
+
+
 def auto_assign(session_id, cwd):
-    """Auto-assign a friendly name based on directory suffix. e.g. taskflow-web -> Web."""
+    """Auto-assign a friendly name and project based on directory suffix. e.g. taskflow-web -> Web."""
     dirname = os.path.basename(cwd).lower() if cwd else ""
+    project = detect_project(cwd)
 
     # Check exact directory overrides first
     if dirname in DIR_MAP:
         name = DIR_MAP[dirname]
         conn = get_db()
         conn.execute("DELETE FROM agents WHERE name = ?", (name,))
-        conn.execute("INSERT OR REPLACE INTO agents (session_id, name) VALUES (?, ?)", (session_id, name))
+        conn.execute("INSERT OR REPLACE INTO agents (session_id, name, project) VALUES (?, ?, ?)", (session_id, name, project))
         conn.commit()
         conn.close()
         return name
@@ -104,7 +170,7 @@ def auto_assign(session_id, cwd):
         if dirname.endswith(f"-{key}"):
             conn = get_db()
             conn.execute("DELETE FROM agents WHERE name = ?", (name,))
-            conn.execute("INSERT OR REPLACE INTO agents (session_id, name) VALUES (?, ?)", (session_id, name))
+            conn.execute("INSERT OR REPLACE INTO agents (session_id, name, project) VALUES (?, ?, ?)", (session_id, name, project))
             conn.commit()
             conn.close()
             return name
@@ -155,17 +221,19 @@ def cmd_assign(args):
 
 
 def cmd_check(args):
-    """Return unread messages for a session (from other senders). Updates cursor."""
+    """Return unread messages for a session (from other senders, same project). Updates cursor."""
     session_id = args.session_id
     my_name = resolve_name(session_id)
+    my_project = resolve_project(session_id)
     conn = get_db()
 
     row = conn.execute("SELECT message_id FROM last_read WHERE session_id = ?", (session_id,)).fetchone()
     last_id = row[0] if row else 0
 
+    # Only see messages from same project or 'general' (human broadcasts)
     rows = conn.execute(
-        "SELECT id, timestamp, sender, message FROM messages WHERE id > ? AND sender != ? ORDER BY id",
-        (last_id, my_name),
+        "SELECT id, timestamp, sender, message FROM messages WHERE id > ? AND sender != ? AND (project = ? OR project = 'general') ORDER BY id",
+        (last_id, my_name, my_project),
     ).fetchall()
 
     if rows:
@@ -176,7 +244,7 @@ def cmd_check(args):
         )
         conn.commit()
 
-        print(f"[comms] New messages (you are {my_name}):")
+        print(f"[comms] New messages (you are {my_name}, project={my_project}):")
         for _id, ts, sender, message in rows:
             try:
                 time_str = datetime.fromisoformat(ts).strftime("%H:%M:%S")
@@ -192,27 +260,28 @@ def cmd_check(args):
 def cmd_post(args):
     conn = get_db()
     conn.execute(
-        "INSERT INTO messages (sender, channel, message) VALUES (?, ?, ?)",
-        (args.sender, args.channel, " ".join(args.message)),
+        "INSERT INTO messages (sender, channel, message, project) VALUES (?, ?, ?, ?)",
+        (args.sender, args.channel, " ".join(args.message), args.project),
     )
     conn.commit()
     conn.close()
 
 
 def format_row(row):
-    _id, ts, sender, channel, message = row
+    _id, ts, sender, channel, message = row[:5]
+    project = row[5] if len(row) > 5 else "general"
     try:
         dt = datetime.fromisoformat(ts)
         time_str = dt.strftime("%H:%M:%S")
     except (ValueError, TypeError):
         time_str = ts[:8] if ts else "??:??:??"
-    return f"{time_str} {sender:<18} #{channel:<10} {message}"
+    return f"{time_str} [{project}] {sender:<18} {message}"
 
 
 def cmd_history(args):
     conn = get_db()
     rows = conn.execute(
-        "SELECT id, timestamp, sender, channel, message FROM messages ORDER BY id DESC LIMIT ?",
+        "SELECT id, timestamp, sender, channel, message, project FROM messages ORDER BY id DESC LIMIT ?",
         (args.n,),
     ).fetchall()
     conn.close()
@@ -234,7 +303,7 @@ def cmd_watch(args):
         while True:
             conn = get_db()
             rows = conn.execute(
-                "SELECT id, timestamp, sender, channel, message FROM messages WHERE id > ? ORDER BY id",
+                "SELECT id, timestamp, sender, channel, message, project FROM messages WHERE id > ? ORDER BY id",
                 (last_id,),
             ).fetchall()
             conn.close()
@@ -249,7 +318,7 @@ def cmd_watch(args):
 def poll_new(last_id):
     conn = get_db()
     rows = conn.execute(
-        "SELECT id, timestamp, sender, channel, message FROM messages WHERE id > ? ORDER BY id",
+        "SELECT id, timestamp, sender, channel, message, project FROM messages WHERE id > ? ORDER BY id",
         (last_id,),
     ).fetchall()
     conn.close()
@@ -266,7 +335,7 @@ def cmd_chat(args):
 
     conn = get_db()
     rows = conn.execute(
-        "SELECT id, timestamp, sender, channel, message FROM messages ORDER BY id DESC LIMIT 10"
+        "SELECT id, timestamp, sender, channel, message, project FROM messages ORDER BY id DESC LIMIT 10"
     ).fetchall()
     row = conn.execute("SELECT MAX(id) FROM messages").fetchone()
     last_id = row[0] or 0
@@ -278,6 +347,7 @@ def cmd_chat(args):
         print()
 
     print("[chat mode — type message + enter to send, ctrl-c to quit]")
+    print("[messages go to 'general' project — all agents see them]")
     print()
 
     input_buf = ""
@@ -295,8 +365,8 @@ def cmd_chat(args):
                         sys.stdout.flush()
                         conn = get_db()
                         conn.execute(
-                            "INSERT INTO messages (sender, channel, message) VALUES (?, ?, ?)",
-                            ("nick", "general", input_buf.strip()),
+                            "INSERT INTO messages (sender, channel, message, project) VALUES (?, ?, ?, ?)",
+                            ("nick", "general", input_buf.strip(), "general"),
                         )
                         conn.commit()
                         conn.close()
@@ -365,6 +435,7 @@ def main():
     p_post = sub.add_parser("post", help="Post a message")
     p_post.add_argument("-s", "--sender", default="nick")
     p_post.add_argument("-c", "--channel", default="general")
+    p_post.add_argument("-p", "--project", default="general")
     p_post.add_argument("message", nargs="+")
 
     p_history = sub.add_parser("history", help="Show recent messages")
