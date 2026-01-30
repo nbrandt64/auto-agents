@@ -59,9 +59,10 @@ A framework for running multiple Claude Code CLI sessions simultaneously on the 
 ```
 auto-agents/
 ├── README.md
+├── article.md                 # How and why this works
+├── tutorial.md                # Step-by-step setup guide
 ├── docs/
-│   ├── architecture.md        # System design and data flow
-│   └── article.md             # Full write-up
+│   └── architecture.md        # System design and data flow
 ├── setup/
 │   ├── comms.py               # Agent comms CLI
 │   ├── comms.sh               # Hook wrapper script
@@ -76,9 +77,11 @@ auto-agents/
     └── shared/                # Shared code between agents
 ```
 
-## Read the Article
+## Read More
 
-For the full story behind this system, see [article.md](article.md).
+- [Article](article.md) -- How and why this system works
+- [Tutorial](tutorial.md) -- Step-by-step setup guide
+- [Architecture](docs/architecture.md) -- System design and data flow
 
 ## License
 
