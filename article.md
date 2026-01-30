@@ -189,7 +189,7 @@ Four hooks, four behaviors:
 
 **PreToolUse** -- Before every single tool call, the hook runs `comms.py check`. If there are new messages, they're injected into the agent's context. The agent sees them naturally, as if someone spoke to them. Directed messages get the `>>> FOR YOU` tag.
 
-**PostToolUse (Bash only)** -- After any Bash command, the hook checks if it was a git operation (checkout, push, pull, merge, etc.). If so, it posts to the chat: "git: push origin feat/add-tasks". Other agents know when branches are changing.
+**PostToolUse (Bash only)** -- After any Bash command, the hook checks if it was a git operation (checkout, push, pull, merge, etc.). If so, it posts to the chat: "git: push origin feat/add-tasks". Other agents know when branches are changing. It also detects `gh pr merge` commands and automatically pulls the default branch in the main repo directory, so Xcode (or whatever builds from the main repo) always has the latest merged code. No more "rebuild didn't pick up changes" surprises.
 
 **Stop** -- When a session ends, the hook posts "Session ended." Other agents know that agent is no longer active.
 

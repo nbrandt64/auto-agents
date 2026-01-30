@@ -58,7 +58,7 @@ Claude Code hooks in `settings.json` drive the system automatically:
 - **SessionStart**: Registers the agent on the group chat and posts a join message. The agent name is derived from the working directory (e.g., `myapp-web/` becomes "Web").
 - **SessionStop**: Posts a departure message so other agents know the session ended.
 - **PreToolUse**: Before every tool invocation, runs `comms.py check` to surface any new messages. Messages addressed to the current agent (e.g., `Web: please review the auth module`) are tagged `>>> FOR YOU`.
-- **PostToolUse (Bash)**: After Bash commands that involve git operations, posts a summary to the chat (e.g., "pushed feat/login to origin").
+- **PostToolUse (Bash)**: After Bash commands that involve git operations, posts a summary to the chat (e.g., "pushed feat/login to origin"). Also detects `gh pr merge` and auto-pulls the default branch in the main repo directory so it stays in sync with merged PRs.
 
 ### Copilot Review Gate
 
