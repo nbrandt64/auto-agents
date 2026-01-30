@@ -40,6 +40,18 @@ case "$MODE" in
         if echo "$CMD" | grep -qE '\bgit\s+(checkout|switch|branch|merge|rebase|push|pull|worktree)\b'; then
             python3 "$COMMS" post -s "$SENDER" "git: $CMD"
         fi
+        # Auto-pull main repo after gh pr merge
+        if echo "$CMD" | grep -qE '\bgh\s+pr\s+merge\b'; then
+            CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
+            MAIN_REPO=$(cd "$CWD" && git worktree list --porcelain 2>/dev/null | head -1 | sed 's/^worktree //')
+            if [ -n "$MAIN_REPO" ] && [ -d "$MAIN_REPO" ]; then
+                DEFAULT_BRANCH=$(cd "$MAIN_REPO" && git symbolic-ref --short HEAD 2>/dev/null || echo "")
+                if [ -n "$DEFAULT_BRANCH" ]; then
+                    (cd "$MAIN_REPO" && git pull origin "$DEFAULT_BRANCH" 2>/dev/null) &
+                    python3 "$COMMS" post -s "$SENDER" "auto-pulled $DEFAULT_BRANCH in $(basename "$MAIN_REPO")/"
+                fi
+            fi
+        fi
         ;;
 esac
 
