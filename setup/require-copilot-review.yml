@@ -1,0 +1,81 @@
+name: Require Copilot Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  pull_request_review:
+    types: [submitted]
+
+permissions:
+  pull-requests: read
+  statuses: write
+
+jobs:
+  check-copilot-review:
+    name: Copilot Review Required
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for Copilot review
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+
+          REPO="${{ github.repository }}"
+
+          # Handle both pull_request and pull_request_review events
+          if [ -n "${{ github.event.pull_request.number }}" ]; then
+            PR_NUMBER="${{ github.event.pull_request.number }}"
+            SHA="${{ github.event.pull_request.head.sha }}"
+          elif [ -n "${{ github.event.review.pull_request.number }}" ]; then
+            PR_NUMBER="${{ github.event.review.pull_request.number }}"
+            SHA="${{ github.event.review.pull_request.head.sha }}"
+          else
+            echo "Could not determine PR number from event"
+            exit 0
+          fi
+
+          echo "Checking for Copilot review on PR #$PR_NUMBER (sha: $SHA)"
+
+          REVIEWS=$(gh api "repos/$REPO/pulls/$PR_NUMBER/reviews" 2>&1) || {
+            echo "Error: Failed to fetch reviews: $REVIEWS"
+            exit 1
+          }
+
+          COPILOT_REVIEW=$(echo "$REVIEWS" | jq -r '
+            [.[] | select(
+              .user.login == "copilot-pull-request-reviewer[bot]" and
+              (.state == "COMMENTED" or .state == "APPROVED")
+            )] | first | .state // empty
+          ')
+
+          if [ -z "$COPILOT_REVIEW" ]; then
+            echo "Copilot has not reviewed yet - setting pending status"
+            gh api "repos/$REPO/statuses/$SHA" \
+              -f state=pending \
+              -f context="Copilot Review Gate" \
+              -f description="Waiting for Copilot review (2-5 min)" \
+              -f target_url="https://github.com/$REPO/pull/$PR_NUMBER"
+          else
+            echo "Copilot has reviewed (state: $COPILOT_REVIEW)"
+
+            COMMENT_COUNT=$(gh api "repos/$REPO/pulls/$PR_NUMBER/comments" \
+              --jq '[.[] | select(.user.login == "copilot-pull-request-reviewer[bot]")] | length' 2>/dev/null || echo "0")
+            echo "Copilot comments: $COMMENT_COUNT"
+
+            if [ "$COMMENT_COUNT" -gt 0 ]; then
+              echo "Copilot left $COMMENT_COUNT comment(s) - setting failure status"
+              gh api "repos/$REPO/statuses/$SHA" \
+                -f state=failure \
+                -f context="Copilot Review Gate" \
+                -f description="Copilot left $COMMENT_COUNT comment(s) — resolve before merging" \
+                -f target_url="https://github.com/$REPO/pull/$PR_NUMBER"
+            else
+              echo "No Copilot comments - setting success status"
+              gh api "repos/$REPO/statuses/$SHA" \
+                -f state=success \
+                -f context="Copilot Review Gate" \
+                -f description="Copilot reviewed — no comments" \
+                -f target_url="https://github.com/$REPO/pull/$PR_NUMBER"
+            fi
+          fi

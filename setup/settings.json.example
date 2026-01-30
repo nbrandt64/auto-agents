@@ -1,0 +1,29 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "bash ~/.claude/scripts/comms.sh session-start"
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "bash ~/.claude/scripts/comms.sh session-end"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "type": "command",
+        "command": "bash ~/.claude/scripts/comms.sh check"
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "type": "command",
+        "command": "bash ~/.claude/scripts/comms.sh git-detect"
+      }
+    ]
+  }
+}

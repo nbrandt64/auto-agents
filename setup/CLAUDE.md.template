@@ -1,0 +1,57 @@
+# CLAUDE.md — [PROJECT_NAME]
+
+## Agent Sector Ownership
+
+Each agent owns specific directories. Only modify files in YOUR sector.
+
+| Sector | Directory | Agent | Responsibility |
+|--------|-----------|-------|----------------|
+| Frontend | `frontend/` | Web | React components, styling, API client |
+| API | `api/` | API | Express routes, middleware, validation |
+| Data | `data/` | Data | Database schema, migrations, queries |
+| Shared | `shared/` | Any | Types only — coordinate before changing |
+
+**Rules:**
+- NEVER modify files outside your sector without asking in group chat first
+- If you need a change in another sector, post a message: "API: please add GET /tasks/:id"
+- `shared/` changes must be announced: "All: updated Task type in shared/types.ts"
+
+## Agent Identity
+
+You are the **[AGENT_NAME]** agent. Your sector is `[SECTOR_DIR]/`.
+
+## Git Workflow
+
+You are in a persistent worktree. Your workflow:
+
+1. Create a feature branch: `git checkout -b feat/description`
+2. Make changes, commit, push
+3. Create PR: `gh pr create --base [DEFAULT_BRANCH] --title "..." --body "..."`
+4. Return to parking branch: `git checkout agent/[AGENT_SUFFIX]`
+5. Pull latest: `git pull origin [DEFAULT_BRANCH]`
+
+**Never push directly to [DEFAULT_BRANCH].**
+
+## Group Chat (Comms)
+
+You are on a group chat with other agents and the human.
+
+### Reading Messages
+Messages appear automatically before each tool use via hooks.
+- `>>> FOR YOU` — act on it
+- Messages to other agents — read for context only
+
+### Sending Messages
+```bash
+python3 ~/.claude/scripts/comms.py post -s "[AGENT_NAME]" "your message"
+```
+
+### When to Post
+- When you need something from another agent's sector
+- When you've completed a PR that affects shared types
+- When you're blocked on something
+- Status updates on significant progress
+
+### When NOT to Post
+- Routine file reads or edits within your sector
+- Every individual command you run
