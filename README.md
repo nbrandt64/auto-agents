@@ -54,6 +54,20 @@ A framework for running multiple Claude Code CLI sessions simultaneously on the 
 
    Copy `setup/require-copilot-review.yml` into your repo's `.github/workflows/` directory.
 
+## Configuration
+
+All configuration is via environment variables (all optional):
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `COMMS_DB_PATH` | `~/.claude/comms/messages.db` | Path to the SQLite database file |
+| `COMMS_AGENT_NAMES` | `Sysadmin,Web,API,Data` | Valid agent names for auto-assignment from directory suffixes |
+| `COMMS_DIR_MAP` | `{}` | JSON: directory name to agent name overrides (e.g., `'{"ops": "Sysadmin"}'`) |
+| `COMMS_PROJECT_MAP` | `{}` | JSON: directory name to project name overrides (e.g., `'{"ops": "taskflow"}'`) |
+| `COMMS_CROSS_PROJECT_AGENTS` | *(empty)* | Comma-separated agent names that see messages from all projects |
+
+Set these in your shell profile (`~/.zshrc`, `~/.bashrc`) or per-session.
+
 ## Repo Structure
 
 ```
@@ -62,7 +76,9 @@ auto-agents/
 ├── article.md                 # How and why this works
 ├── tutorial.md                # Step-by-step setup guide
 ├── docs/
-│   └── architecture.md        # System design and data flow
+│   ├── architecture.md        # System design and data flow
+│   ├── agent-os-integration.md # Using with Agent OS for consistent standards
+│   └── optional-hooks.md      # Optional hook patterns for code quality
 ├── setup/
 │   ├── comms.py               # Agent comms CLI
 │   ├── comms.sh               # Hook wrapper script
@@ -82,6 +98,8 @@ auto-agents/
 - [Article](article.md) -- How and why this system works
 - [Tutorial](tutorial.md) -- Step-by-step setup guide
 - [Architecture](docs/architecture.md) -- System design and data flow
+- [Agent OS Integration](docs/agent-os-integration.md) -- Pairing with Agent OS for consistent standards
+- [Optional Hooks](docs/optional-hooks.md) -- Hook patterns for code quality
 
 ## License
 

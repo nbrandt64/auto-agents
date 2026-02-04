@@ -49,7 +49,7 @@ The communication layer is a single Python script (`comms.py`) backed by a SQLit
 - **Agents table**: maps Claude Code session IDs to friendly names (Web, API, Data, etc.).
 - **Last-read tracking**: each session tracks which messages it has already seen, so the `check` command only surfaces new messages.
 
-The script supports these commands: `post`, `check`, `chat`, `history`, `status`, `assign`, `auto-assign`, and `resolve-name`. Agents primarily use `post` (send a message) and `check` (poll for new messages directed at them).
+The script supports these commands: `post`, `check`, `chat`, `history`, `status`, `assign`, `auto-assign`, `resolve-name`, and `detect-project`. Agents primarily use `post` (send a message) and `check` (poll for new messages directed at them).
 
 ### Hooks
 
@@ -80,15 +80,38 @@ Agents are expected to poll for Copilot comments, fix them, push, and wait for r
 
 6. **Gate passes, PR merges**: Once Copilot leaves zero comments, the gate status flips to `success`. The agent (or a sysadmin agent) merges the PR and posts a notification so all agents pull the latest changes.
 
+## Project Scoping
+
+Messages in the comms system are scoped by **project**. Each agent is associated with a project (auto-detected from the git repo name or configured via `COMMS_PROJECT_MAP`), and the `check` command only surfaces messages from the same project plus `general` broadcasts.
+
+This means agents working on different repos don't see each other's noise. A Web agent on project "taskflow" only sees messages tagged with "taskflow" or "general" -- not messages from agents on "other-project".
+
+**Cross-project agents** are the exception. Agents listed in `COMMS_CROSS_PROJECT_AGENTS` (e.g., a Sysadmin that orchestrates across repos) see messages from all projects. Their `check` output includes a `[project]` tag on each message so they know which project it came from.
+
+Project detection follows this priority:
+1. Exact match in `COMMS_PROJECT_MAP` (e.g., `{"ops": "taskflow"}`)
+2. Prefix match in `COMMS_PROJECT_MAP` (e.g., directory `taskflow-web` matches key `taskflow`)
+3. Git worktree root directory name
+4. Falls back to `general`
+
+The `detect-project` subcommand lets you test detection from the command line:
+
+```bash
+python3 comms.py detect-project /path/to/taskflow-web
+# Output: taskflow
+```
+
 ## Configuration
 
-The system uses three environment variables (all optional, with sensible defaults):
+The system uses environment variables (all optional, with sensible defaults):
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `COMMS_DB_PATH` | `~/.claude/comms/messages.db` | Path to the SQLite database file. |
-| `COMMS_AGENT_NAMES` | `Sysadmin,Web,Integr,App,Misc` | Comma-separated list of valid agent names for auto-assignment. |
-| `COMMS_DIR_MAP` | Derived from directory name | Explicit mapping of directory names to agent names (e.g., `myapp-web:Web,myapp-api:API`). |
+| `COMMS_AGENT_NAMES` | `Sysadmin,Web,API,Data` | Comma-separated list of valid agent names for auto-assignment. |
+| `COMMS_DIR_MAP` | `{}` | JSON mapping of directory names to agent names (e.g., `'{"ops": "Sysadmin"}'`). |
+| `COMMS_PROJECT_MAP` | `{}` | JSON mapping of directory names to project names (e.g., `'{"ops": "taskflow"}'`). |
+| `COMMS_CROSS_PROJECT_AGENTS` | *(empty)* | Comma-separated agent names that see messages from all projects. |
 
 ## Security Notes
 

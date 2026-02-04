@@ -21,9 +21,9 @@ if [ -z "$SESSION_ID" ]; then
     exit 0
 fi
 
-# Derive project from CWD (git worktree root directory name)
+# Derive project from CWD (delegates to comms.py detect-project for consistency)
 CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
-PROJECT=$(cd "$CWD" 2>/dev/null && git worktree list --porcelain 2>/dev/null | head -1 | sed 's/^worktree //' | xargs basename 2>/dev/null | tr '[:upper:]' '[:lower:]' || echo "general")
+PROJECT=$(python3 "$COMMS" detect-project "$CWD" 2>/dev/null || echo "general")
 PROJECT="${PROJECT:-general}"
 
 case "$MODE" in

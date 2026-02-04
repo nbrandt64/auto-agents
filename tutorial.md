@@ -60,6 +60,26 @@ The hooks config should look like this:
 }
 ```
 
+## Step 3b (Optional): Configure environment variables
+
+If you're managing multiple projects or need custom agent/project mappings, add these to your shell profile (`~/.zshrc` or `~/.bashrc`):
+
+```bash
+# Custom agent names (default: Sysadmin,Web,API,Data)
+export COMMS_AGENT_NAMES="Sysadmin,Web,API,Data,QA"
+
+# Map specific directories to project names
+export COMMS_PROJECT_MAP='{"ops": "taskflow", "infra": "taskflow"}'
+
+# Map specific directories to agent names
+export COMMS_DIR_MAP='{"ops": "Sysadmin"}'
+
+# Agents that see messages from all projects (for cross-repo orchestration)
+export COMMS_CROSS_PROJECT_AGENTS="Sysadmin"
+```
+
+For single-project setups, the defaults work fine and you can skip this step.
+
 ## Step 4: Create your project repo
 
 Set up a new repo on GitHub for the sample app:

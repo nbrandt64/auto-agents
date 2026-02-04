@@ -141,6 +141,8 @@ export COMMS_AGENT_NAMES="Sysadmin,Web,API,Data"
 export COMMS_DIR_MAP='{"ops": "Sysadmin"}'
 ```
 
+Messages are scoped by **project**. Each agent is automatically associated with a project based on its git repo name, and `check` only surfaces messages from the same project (plus `general` broadcasts from the human). This keeps things clean when you're running agents across multiple repos -- a Sysadmin orchestrating three projects doesn't flood the frontend agent with irrelevant chatter. Cross-project agents (like that Sysadmin) can opt into seeing everything by setting the `COMMS_CROSS_PROJECT_AGENTS` env var.
+
 The `check` command is the magic. It's called before every tool use via a `PreToolUse` hook. It looks for messages since the last check and returns any that are relevant. Messages directed at your agent (e.g., "Web: please update the TaskList") are tagged `>>> FOR YOU` so the agent knows to act on them.
 
 This means agents don't poll or wait. They just work, and between tool calls, they naturally see any new messages. If another agent needs something from them, the message appears in context and they can respond.
@@ -270,6 +272,17 @@ The group chat was surprisingly effective. Agents naturally asked each other for
 
 ---
 
+## Pairing with Agent OS
+
+auto-agents solves coordination: worktrees, comms, review gates. But there's a separate problem -- how do you ensure all those agents follow consistent coding standards? If you have four agents writing code simultaneously, you need them all agreeing on naming conventions, architecture patterns, error handling, and more.
+
+[Agent OS](https://buildermethods.com/agent-os) is a framework for managing coding standards across AI-powered development. It discovers, organizes, and injects standards into your CLAUDE.md files. The two systems complement each other:
+
+- **auto-agents** handles the *coordination layer* -- who works where, how they communicate, how code gets reviewed and merged.
+- **Agent OS** handles the *quality layer* -- what standards agents follow, how those standards are discovered and maintained.
+
+When used together: Agent OS discovers and injects standards into your CLAUDE.md, auto-agents ensures every worktree gets that same CLAUDE.md, and the result is multiple agents working in parallel with consistent quality. See [Agent OS Integration](docs/agent-os-integration.md) for setup details.
+
 ## What's Next
 
 This system works well for a single repo with 3-4 specialist agents. There are several directions to push it further.
@@ -278,7 +291,7 @@ This system works well for a single repo with 3-4 specialist agents. There are s
 
 **Conflict resolution.** Right now, sector ownership prevents most conflicts. But when two agents both need to change `shared/types.ts`, coordination is manual (post in chat, wait for acknowledgment). An automated conflict resolution protocol -- locking, queuing, or merge-and-rebase -- would make shared code less fragile.
 
-**Multi-repo orchestration.** The comms system already supports multiple agent names and custom directory mappings. Extending this to coordinate agents across separate repos (frontend repo, backend repo, infrastructure repo) is a natural next step.
+**Multi-repo orchestration.** The comms system now supports project scoping and cross-project visibility. Agents across separate repos (frontend repo, backend repo, infrastructure repo) can coordinate through the same SQLite group chat. Messages are tagged by project, and a Sysadmin-type agent can see messages from all projects while specialist agents only see their own.
 
 **Persistent memory.** Agents lose all context when their session ends. A persistent memory layer -- key decisions, architectural choices, known issues -- would reduce the ramp-up cost of starting new sessions and let agents build on prior work without re-reading the entire codebase.
 

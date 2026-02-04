@@ -7,18 +7,27 @@ Messages are posted automatically by hooks and checked before each tool use.
 
 Messages are scoped by project. The project is auto-detected from the git
 repo name (the root worktree directory). Agents only see messages from their
-own project (plus 'general' broadcasts from the human).
+own project (plus 'general' broadcasts from the human). Cross-project agents
+(configured via COMMS_CROSS_PROJECT_AGENTS) see messages from all projects.
+
+Environment variables:
+    COMMS_DB_PATH              — Path to SQLite DB (default: ~/.claude/comms/messages.db)
+    COMMS_AGENT_NAMES          — Comma-separated valid agent names for auto-assign
+    COMMS_DIR_MAP              — JSON: directory name → agent name overrides
+    COMMS_PROJECT_MAP          — JSON: directory name → project name overrides
+    COMMS_CROSS_PROJECT_AGENTS — Comma-separated agent names that see all projects
 
 Usage:
     python3 comms.py post -s "Web" -p "taskflow" "PR #12 ready for review"
     python3 comms.py check <session_id>
     python3 comms.py watch
-    python3 comms.py chat
-    python3 comms.py history [n]
+    python3 comms.py chat [-p project]
+    python3 comms.py history [n] [-p project]
     python3 comms.py status
     python3 comms.py assign <name> <agent-id>
     python3 comms.py auto-assign <session_id> <cwd>
     python3 comms.py resolve-name <session_id>
+    python3 comms.py detect-project <cwd>
 """
 
 import argparse
@@ -48,14 +57,23 @@ DIR_MAP = json.loads(_DIR_MAP_RAW)
 _PROJECT_MAP_RAW = os.environ.get("COMMS_PROJECT_MAP", '{}')
 PROJECT_MAP = json.loads(_PROJECT_MAP_RAW)
 
+# Agents that see messages from ALL projects (cross-project visibility).
+# e.g. "Sysadmin" can monitor multiple repos from a single ops directory.
+CROSS_PROJECT_AGENTS = [
+    n.strip() for n in
+    os.environ.get("COMMS_CROSS_PROJECT_AGENTS", "").split(",")
+    if n.strip()
+]
+
 
 def detect_project(cwd):
     """Derive project name from working directory.
 
     Strategy:
     1. Check COMMS_PROJECT_MAP for exact directory name match
-    2. Find the git repo root (main worktree) and use its directory name
-    3. Fall back to 'general'
+    2. Check COMMS_PROJECT_MAP keys as prefixes (e.g. "taskflow-web" matches "taskflow")
+    3. Find the git repo root (main worktree) and use its directory name
+    4. Fall back to 'general'
 
     Examples (assuming repo root is /path/to/taskflow):
         /path/to/taskflow-web  -> taskflow
@@ -69,6 +87,11 @@ def detect_project(cwd):
     # Exact overrides
     if dirname in PROJECT_MAP:
         return PROJECT_MAP[dirname]
+
+    # Check if dirname starts with a known project prefix (e.g. "taskflow-web" → "taskflow")
+    for prefix, project in PROJECT_MAP.items():
+        if dirname.startswith(prefix + "-"):
+            return project
 
     # Derive from git worktree root
     try:
@@ -230,11 +253,17 @@ def cmd_check(args):
     row = conn.execute("SELECT message_id FROM last_read WHERE session_id = ?", (session_id,)).fetchone()
     last_id = row[0] if row else 0
 
-    # Only see messages from same project or 'general' (human broadcasts)
-    rows = conn.execute(
-        "SELECT id, timestamp, sender, message FROM messages WHERE id > ? AND sender != ? AND (project = ? OR project = 'general') ORDER BY id",
-        (last_id, my_name, my_project),
-    ).fetchall()
+    # Cross-project agents see all messages; others see only their project + 'general'
+    if my_name in CROSS_PROJECT_AGENTS:
+        rows = conn.execute(
+            "SELECT id, timestamp, sender, message, project FROM messages WHERE id > ? AND sender != ? ORDER BY id",
+            (last_id, my_name),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT id, timestamp, sender, message, project FROM messages WHERE id > ? AND sender != ? AND (project = ? OR project = 'general') ORDER BY id",
+            (last_id, my_name, my_project),
+        ).fetchall()
 
     if rows:
         new_last = rows[-1][0]
@@ -245,14 +274,17 @@ def cmd_check(args):
         conn.commit()
 
         print(f"[comms] New messages (you are {my_name}, project={my_project}):")
-        for _id, ts, sender, message in rows:
+        for row in rows:
+            _id, ts, sender, message = row[0], row[1], row[2], row[3]
+            msg_project = row[4] if len(row) > 4 else ""
             try:
                 time_str = datetime.fromisoformat(ts).strftime("%H:%M:%S")
             except (ValueError, TypeError):
                 time_str = "??:??:??"
             directed = message.lower().startswith(my_name.lower() + ":") or message.lower().startswith(my_name.lower() + ",")
             tag = " >>> FOR YOU" if directed else ""
-            print(f"  {time_str} {sender}: {message}{tag}")
+            proj_tag = f" [{msg_project}]" if my_name in CROSS_PROJECT_AGENTS and msg_project else ""
+            print(f"  {time_str}{proj_tag} {sender}: {message}{tag}")
 
     conn.close()
 
@@ -280,10 +312,16 @@ def format_row(row):
 
 def cmd_history(args):
     conn = get_db()
-    rows = conn.execute(
-        "SELECT id, timestamp, sender, channel, message, project FROM messages ORDER BY id DESC LIMIT ?",
-        (args.n,),
-    ).fetchall()
+    if args.project:
+        rows = conn.execute(
+            "SELECT id, timestamp, sender, channel, message, project FROM messages WHERE project = ? OR project = 'general' ORDER BY id DESC LIMIT ?",
+            (args.project, args.n),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT id, timestamp, sender, channel, message, project FROM messages ORDER BY id DESC LIMIT ?",
+            (args.n,),
+        ).fetchall()
     conn.close()
     if not rows:
         print("No messages yet.")
@@ -333,6 +371,8 @@ def cmd_chat(args):
     import tty
     import termios
 
+    project = args.project
+
     conn = get_db()
     rows = conn.execute(
         "SELECT id, timestamp, sender, channel, message, project FROM messages ORDER BY id DESC LIMIT 10"
@@ -347,7 +387,7 @@ def cmd_chat(args):
         print()
 
     print("[chat mode — type message + enter to send, ctrl-c to quit]")
-    print("[messages go to 'general' project — all agents see them]")
+    print(f"[messages scoped to project '{project}' — all agents in this project see them]")
     print()
 
     input_buf = ""
@@ -366,7 +406,7 @@ def cmd_chat(args):
                         conn = get_db()
                         conn.execute(
                             "INSERT INTO messages (sender, channel, message, project) VALUES (?, ?, ?, ?)",
-                            ("nick", "general", input_buf.strip(), "general"),
+                            ("nick", "general", input_buf.strip(), project),
                         )
                         conn.commit()
                         conn.close()
@@ -428,6 +468,11 @@ def cmd_status(args):
         print(f"{sender:<20} {count:>5}  {ls:<12}")
 
 
+def cmd_detect_project(args):
+    """Print the detected project for a given working directory."""
+    print(detect_project(args.cwd))
+
+
 def main():
     parser = argparse.ArgumentParser(description="Agent comms — group chat for Claude Code agents")
     sub = parser.add_subparsers(dest="command")
@@ -440,9 +485,13 @@ def main():
 
     p_history = sub.add_parser("history", help="Show recent messages")
     p_history.add_argument("n", nargs="?", type=int, default=20)
+    p_history.add_argument("-p", "--project", default=None, help="Filter by project (+ general)")
 
     sub.add_parser("watch", help="Live tail of all messages")
-    sub.add_parser("chat", help="Interactive chat mode")
+
+    p_chat = sub.add_parser("chat", help="Interactive chat mode")
+    p_chat.add_argument("-p", "--project", default="general", help="Project to scope messages to")
+
     sub.add_parser("status", help="Show active agents")
 
     p_resolve = sub.add_parser("resolve-name", help="Resolve session to name")
@@ -459,6 +508,9 @@ def main():
     p_auto.add_argument("session_id")
     p_auto.add_argument("cwd")
 
+    p_detect = sub.add_parser("detect-project", help="Print detected project for a directory")
+    p_detect.add_argument("cwd")
+
     args = parser.parse_args()
     if not args.command:
         parser.print_help()
@@ -474,6 +526,7 @@ def main():
         "assign": cmd_assign,
         "check": cmd_check,
         "auto-assign": lambda a: auto_assign(a.session_id, a.cwd),
+        "detect-project": cmd_detect_project,
     }[args.command](args)
 
 
