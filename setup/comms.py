@@ -13,10 +13,10 @@ from pathlib import Path
 
 CONFIG_PATH = Path.home() / ".claude" / "comms" / "config"
 
-FRIENDLY_NAMES = ["Sysadmin", "Web", "Integr", "App", "Misc"]
+FRIENDLY_NAMES = ["Sysadmin", "Web", "App", "Misc", "Integr1", "Integr2", "AlexOps", "AlexMisc"]
 
 # Agents that should see messages from ALL projects (cross-project roles)
-CROSS_PROJECT_AGENTS = ["Sysadmin"]
+CROSS_PROJECT_AGENTS = ["Sysadmin", "AlexOps"]
 
 # Known project directory prefixes → project name.
 PROJECT_DIRS = {
@@ -27,7 +27,7 @@ PROJECT_DIRS = {
 }
 
 # Exact directory-to-name mappings
-DIR_MAP = {"github": "Sysadmin", "signaturefinder": "SignatureFinder", "poker-ai": "PokerAI"}
+DIR_MAP = {"github": "Sysadmin", "signaturefinder": "SignatureFinder", "poker-ai": "PokerAI", "zenvoy-ops": "AlexOps"}
 
 
 def detect_project(cwd):
