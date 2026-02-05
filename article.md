@@ -14,12 +14,12 @@ This article describes the system I built and used in production. Everything ref
 
 ## The Architecture
 
-Four agents, each in its own git worktree, communicating through a SQLite group chat. A human (you) can join the chat at any time. PRs flow through GitHub Copilot as an automated code reviewer before merging.
+Four agents, each in its own git worktree, communicating through a shared group chat backed by a web API. A human (you) can join the chat at any time. PRs flow through GitHub Copilot as an automated code reviewer before merging.
 
 ```
                             +------------------+
                             |    Group Chat    |
-                            |   (SQLite DB)    |
+                            |   (Web API)      |
                             +--------+---------+
                                      |
               +----------+-----------+-----------+----------+
@@ -52,7 +52,7 @@ The key ideas:
 
 **Worktrees, not branches.** Each agent gets its own directory -- a full copy of the repo via `git worktree`. No checkout conflicts because no one shares a working directory. Agent Web works in `taskflow-web/`, Agent API works in `taskflow-api/`. They can both be on different branches at the same time.
 
-**SQLite, not an API.** The group chat is a single SQLite file. No server, no dependencies, no ports. Agents write messages with `comms.py post`, and a `PreToolUse` hook checks for new messages before every tool call. WAL mode handles concurrent writes cleanly.
+**A shared API, not local files.** The group chat is backed by a web API (DynamoDB + Next.js routes) that works across multiple machines. Agents write messages with `comms.py post`, and a `PreToolUse` hook checks for new messages before every tool call. The API uses Bearer token auth and time-sorted keys for consistent ordering.
 
 **Hooks, not code.** Agents don't need special code to participate in the chat. Claude Code hooks handle everything -- auto-registering on session start, checking for messages, detecting git operations, announcing session end. The agent just sees messages appear in context.
 
@@ -112,7 +112,7 @@ Sector ownership also makes PRs cleaner. Each PR only touches one sector's files
 
 ### 3. Group Chat
 
-The group chat is where coordination happens. It's a SQLite database with a Python CLI (`setup/comms.py`) that supports several modes:
+The group chat is where coordination happens. It's a Python CLI (`setup/comms.py`) that talks to a shared web API and supports several modes:
 
 **Posting a message:**
 ```bash
@@ -134,14 +134,9 @@ python3 comms.py chat
 python3 comms.py check <session_id>
 ```
 
-The auto-naming system maps directories to agent names. If your session is running in `taskflow-web/`, you're automatically named "Web." This is configurable:
+The auto-naming system maps directories to agent names. If your session is running in `taskflow-web/`, you're automatically named "Web." The directory-to-name mapping is built into `comms.py` and the server-side API.
 
-```bash
-export COMMS_AGENT_NAMES="Sysadmin,Web,API,Data"
-export COMMS_DIR_MAP='{"ops": "Sysadmin"}'
-```
-
-Messages are scoped by **project**. Each agent is automatically associated with a project based on its git repo name, and `check` only surfaces messages from the same project (plus `general` broadcasts from the human). This keeps things clean when you're running agents across multiple repos -- a Sysadmin orchestrating three projects doesn't flood the frontend agent with irrelevant chatter. Cross-project agents (like that Sysadmin) can opt into seeing everything by setting the `COMMS_CROSS_PROJECT_AGENTS` env var.
+Messages are scoped by **project**. Each agent is automatically associated with a project based on its working directory, and `check` only surfaces messages from the same project (plus `general` broadcasts from the human). This keeps things clean when you're running agents across multiple repos -- a Sysadmin orchestrating three projects doesn't flood the frontend agent with irrelevant chatter. Cross-project agents (like that Sysadmin) automatically see messages from all projects.
 
 The `check` command is the magic. It's called before every tool use via a `PreToolUse` hook. It looks for messages since the last check and returns any that are relevant. Messages directed at your agent (e.g., "Web: please update the TaskList") are tagged `>>> FOR YOU` so the agent knows to act on them.
 
@@ -291,7 +286,7 @@ This system works well for a single repo with 3-4 specialist agents. There are s
 
 **Conflict resolution.** Right now, sector ownership prevents most conflicts. But when two agents both need to change `shared/types.ts`, coordination is manual (post in chat, wait for acknowledgment). An automated conflict resolution protocol -- locking, queuing, or merge-and-rebase -- would make shared code less fragile.
 
-**Multi-repo orchestration.** The comms system now supports project scoping and cross-project visibility. Agents across separate repos (frontend repo, backend repo, infrastructure repo) can coordinate through the same SQLite group chat. Messages are tagged by project, and a Sysadmin-type agent can see messages from all projects while specialist agents only see their own.
+**Multi-repo orchestration.** The comms system supports project scoping and cross-project visibility. Agents across separate repos (frontend repo, backend repo, infrastructure repo) can coordinate through the same shared API. Messages are tagged by project, and a Sysadmin-type agent can see messages from all projects while specialist agents only see their own. Since the backend is a web API, agents on different machines can participate in the same group chat.
 
 **Persistent memory.** Agents lose all context when their session ends. A persistent memory layer -- key decisions, architectural choices, known issues -- would reduce the ramp-up cost of starting new sessions and let agents build on prior work without re-reading the entire codebase.
 

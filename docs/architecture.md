@@ -16,8 +16,8 @@
 │        └───────────┬───┴───────────────┘                  │
 │                    │                                      │
 │         ┌──────────▼──────────┐                           │
-│         │   SQLite Group Chat  │                          │
-│         │   (messages.db)      │                          │
+│         │   Group Chat API     │                          │
+│         │  (DynamoDB + HTTP)   │                          │
 │         └──────────┬──────────┘                           │
 │                    │                                      │
 │         ┌──────────▼──────────┐                           │
@@ -43,13 +43,13 @@ Worktrees are created with `git worktree add` and typically follow a naming patt
 
 ### Comms System
 
-The communication layer is a single Python script (`comms.py`) backed by a SQLite database. It provides:
+The communication layer is a Python CLI (`comms.py`) that talks to a shared web API (DynamoDB + Next.js API routes). It provides:
 
-- **Messages table**: timestamped messages with sender name and channel.
-- **Agents table**: maps Claude Code session IDs to friendly names (Web, API, Data, etc.).
-- **Last-read tracking**: each session tracks which messages it has already seen, so the `check` command only surfaces new messages.
+- **Messages**: timestamped messages with sender name, channel, and project, stored in DynamoDB with time-sorted keys (ULID).
+- **Agent registration**: maps Claude Code session IDs to friendly names (Web, API, Data, etc.) via atomic name claims.
+- **Read cursors**: each session tracks which messages it has already seen server-side, so the `check` command only surfaces new messages.
 
-The script supports these commands: `post`, `check`, `chat`, `history`, `status`, `assign`, `auto-assign`, `resolve-name`, and `detect-project`. Agents primarily use `post` (send a message) and `check` (poll for new messages directed at them).
+The CLI supports these commands: `post`, `check`, `chat`, `history`, `status`, `assign`, `auto-assign`, `resolve-name`, and `watch`. Agents primarily use `post` (send a message) and `check` (poll for new messages directed at them). All communication goes through the API via Bearer token auth.
 
 ### Hooks
 
@@ -82,41 +82,33 @@ Agents are expected to poll for Copilot comments, fix them, push, and wait for r
 
 ## Project Scoping
 
-Messages in the comms system are scoped by **project**. Each agent is associated with a project (auto-detected from the git repo name or configured via `COMMS_PROJECT_MAP`), and the `check` command only surfaces messages from the same project plus `general` broadcasts.
+Messages in the comms system are scoped by **project**. Each agent is associated with a project (auto-detected from the working directory name), and the `check` command only surfaces messages from the same project plus `general` broadcasts.
 
 This means agents working on different repos don't see each other's noise. A Web agent on project "taskflow" only sees messages tagged with "taskflow" or "general" -- not messages from agents on "other-project".
 
-**Cross-project agents** are the exception. Agents listed in `COMMS_CROSS_PROJECT_AGENTS` (e.g., a Sysadmin that orchestrates across repos) see messages from all projects. Their `check` output includes a `[project]` tag on each message so they know which project it came from.
+**Cross-project agents** are the exception. Agents like Sysadmin that orchestrate across repos see messages from all projects. Their `check` output includes a `[project]` tag on each message so they know which project it came from.
 
 Project detection follows this priority:
-1. Exact match in `COMMS_PROJECT_MAP` (e.g., `{"ops": "taskflow"}`)
-2. Prefix match in `COMMS_PROJECT_MAP` (e.g., directory `taskflow-web` matches key `taskflow`)
-3. Git worktree root directory name
-4. Falls back to `general`
-
-The `detect-project` subcommand lets you test detection from the command line:
-
-```bash
-python3 comms.py detect-project /path/to/taskflow-web
-# Output: taskflow
-```
+1. Exact match in directory-to-project mapping (e.g., `github` → `zenvoy`)
+2. Prefix match (e.g., directory `taskflow-web` matches prefix `taskflow`)
+3. Falls back to `general`
 
 ## Configuration
 
-The system uses environment variables (all optional, with sensible defaults):
+The system uses a config file at `~/.claude/comms/config`:
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `COMMS_DB_PATH` | `~/.claude/comms/messages.db` | Path to the SQLite database file. |
-| `COMMS_AGENT_NAMES` | `Sysadmin,Web,API,Data` | Comma-separated list of valid agent names for auto-assignment. |
-| `COMMS_DIR_MAP` | `{}` | JSON mapping of directory names to agent names (e.g., `'{"ops": "Sysadmin"}'`). |
-| `COMMS_PROJECT_MAP` | `{}` | JSON mapping of directory names to project names (e.g., `'{"ops": "taskflow"}'`). |
-| `COMMS_CROSS_PROJECT_AGENTS` | *(empty)* | Comma-separated agent names that see messages from all projects. |
+| Variable | Description |
+|----------|-------------|
+| `COMMS_API_URL` | Base URL of the comms API (e.g., `https://www.example.com`) |
+| `COMMS_API_SECRET` | Shared Bearer token for API authentication |
+
+Environment variables override config file values. Agent names and project mappings are built into `comms.py` and the server-side API.
 
 ## Security Notes
 
-- The SQLite database is local-only. It never leaves the developer's machine and requires no network access.
-- No authentication is needed. All agents run under the same OS user on the same machine, so file-system permissions are sufficient.
-- The database uses WAL mode and busy timeouts to handle concurrent writes from multiple agent processes safely.
-- No secrets are stored in the comms database. It contains only coordination messages and session metadata.
+- All API calls use Bearer token authentication (`COMMS_API_SECRET`).
+- The config file (`~/.claude/comms/config`) contains the shared secret and should not be committed to version control.
+- The API has a 3-second timeout on all calls. The `check` command fails silently on API errors to avoid blocking agent tool use.
+- No application secrets are stored in comms messages — only coordination messages and session metadata.
+- DynamoDB items have a 30-day TTL for automatic cleanup.
 - The `comms.sh` wrapper reads hook JSON from stdin and passes only the relevant fields to `comms.py`, avoiding injection of arbitrary data.

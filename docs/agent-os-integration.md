@@ -11,7 +11,7 @@ Agent OS focuses on the *quality layer* -- what standards your agents follow. au
 | Concern | auto-agents | Agent OS |
 |---------|-------------|----------|
 | Agent isolation | Git worktrees | -- |
-| Agent communication | SQLite group chat | -- |
+| Agent communication | Shared web API group chat | -- |
 | Code review automation | Copilot review gate | -- |
 | Standards discovery | -- | `discover` command |
 | Standards injection | -- | `inject` command |
@@ -120,7 +120,7 @@ A profile is a collection of standards scoped to a project or team. A "base" pro
 │        └───────────┬───┴───────────────┘        │
 │                    │                             │
 │         ┌──────────▼──────────┐                  │
-│         │   SQLite Group Chat  │                 │
+│         │   Group Chat API     │                 │
 │         │   (auto-agents)      │                 │
 │         └─────────────────────┘                  │
 └─────────────────────────────────────────────────┘
