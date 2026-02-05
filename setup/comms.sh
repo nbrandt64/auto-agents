@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
-# Agent comms hook wrapper — reads stdin JSON from Claude Code hooks.
-# Place this at ~/.claude/scripts/comms.sh and make it executable.
+# Agent comms hook wrapper — reads stdin JSON from Claude Code hooks
 set -euo pipefail
 
-COMMS="${COMMS_SCRIPT:-$HOME/.claude/scripts/comms.py}"
+# Load comms API config (URL + secret)
+[ -f "$HOME/.claude/comms/config" ] && source "$HOME/.claude/comms/config"
+export COMMS_API_URL COMMS_API_SECRET
+
+COMMS="$HOME/.claude/scripts/comms.py"
 MODE="${1:-}"
 
 # If no mode argument, pass everything to comms.py directly (manual use)
@@ -15,31 +18,48 @@ fi
 # Hook mode — read stdin JSON
 INPUT=$(cat)
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
-SENDER=$(python3 "$COMMS" resolve-name "$SESSION_ID")
 
 if [ -z "$SESSION_ID" ]; then
     exit 0
 fi
 
-# Derive project from CWD (delegates to comms.py detect-project for consistency)
+# Derive project from CWD for scoping messages (client-side, avoids API call)
 CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
-PROJECT=$(python3 "$COMMS" detect-project "$CWD" 2>/dev/null || echo "general")
-PROJECT="${PROJECT:-general}"
+PROJECT=$(python3 -c "
+import os
+cwd = '$CWD'
+dirname = os.path.basename(cwd).lower() if cwd else ''
+project_dirs = {'zenvoy': 'zenvoy', 'signaturefinder': 'signaturefinder', 'poker-ai': 'poker-ai', 'github': 'zenvoy'}
+if dirname in project_dirs:
+    print(project_dirs[dirname])
+else:
+    found = False
+    for prefix, proj in project_dirs.items():
+        if dirname.startswith(prefix + '-'):
+            print(proj)
+            found = True
+            break
+    if not found:
+        print('general')
+" 2>/dev/null || echo "general")
 
 case "$MODE" in
     session-start)
         DIR_NAME=$(basename "$CWD")
-        python3 "$COMMS" auto-assign "$SESSION_ID" "$CWD"
-        SENDER=$(python3 "$COMMS" resolve-name "$SESSION_ID")
+        # auto-assign registers the agent and returns the name
+        SENDER=$(python3 "$COMMS" auto-assign "$SESSION_ID" "$CWD" 2>/dev/null | tail -1)
+        [ -z "$SENDER" ] && SENDER="agent-${SESSION_ID:0:8}"
         python3 "$COMMS" post -s "$SENDER" -p "$PROJECT" "Session started in $DIR_NAME"
         ;;
     session-end)
+        SENDER=$(python3 "$COMMS" resolve-name "$SESSION_ID" 2>/dev/null || echo "agent-${SESSION_ID:0:8}")
         python3 "$COMMS" post -s "$SENDER" -p "$PROJECT" "Session ended"
         ;;
     check)
         python3 "$COMMS" check "$SESSION_ID"
         ;;
     git-detect)
+        SENDER=$(python3 "$COMMS" resolve-name "$SESSION_ID" 2>/dev/null || echo "agent-${SESSION_ID:0:8}")
         CMD=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
         if echo "$CMD" | grep -qE '\bgit\s+(checkout|switch|branch|merge|rebase|push|pull|worktree)\b'; then
             python3 "$COMMS" post -s "$SENDER" -p "$PROJECT" "git: $CMD"
