@@ -94,7 +94,7 @@ The config file is sourced by `comms.sh` and read by `comms.py`. Environment var
 Agent names are auto-assigned from the working directory name:
 
 - Directory suffixes map to names: `myproject-web` → `Web`, `myproject-app` → `App`
-- Built-in names: `Sysadmin`, `Web`, `Integr`, `App`, `Misc`
+- Built-in names: `Sysadmin`, `Web`, `App`, `Misc`, `Integr1`, `Integr2`, `AlexOps`, `AlexMisc`
 - Exact directory mappings: `github` → `Sysadmin`, `signaturefinder` → `SignatureFinder`, `poker-ai` → `PokerAI`
 
 Project scoping is also derived from directories: `myproject-web` → project `myproject`.
