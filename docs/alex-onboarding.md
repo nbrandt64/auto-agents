@@ -131,9 +131,38 @@ cd ~/projects/zenvoy-integr1 && claude
 
 ## Key Files
 
-- `CLAUDE.md` — Shared project instructions (tracked)
-- `LEARNINGS.md` — Shared gotchas (tracked, read and contribute!)
-- `AGENT.md` — Your agent's identity (untracked, per-worktree)
+### CLAUDE.md (tracked, shared)
+Main project instructions that all agents read. Includes git workflow, decision guidelines, and references to AGENT.md and LEARNINGS.md. Pulled fresh at session start.
+
+### AGENT.md (untracked, per-worktree)
+Your agent's specific identity, responsibilities, and scope. Create one in each worktree directory. Not tracked by git — each worktree has its own.
+
+Example for Integr1:
+```markdown
+# Agent: Integr1
+
+You are **Integr1** — an integration agent.
+
+## Responsibilities
+- Integration implementations
+- OAuth flows, API clients
+- External service connections
+
+## Parking Branch
+`agent/integr1`
+```
+
+### LEARNINGS.md (tracked, shared)
+A shared document of gotchas, pitfalls, and hard-won knowledge that all agents read and contribute to. When you discover something non-obvious (a quirk, a hidden dependency, a "don't do X because Y"), add an entry:
+
+```markdown
+### [Date] Short title
+**Context:** What you were doing
+**Gotcha:** What went wrong or was surprising
+**Fix/Lesson:** How to avoid it
+```
+
+This prevents agents from repeating the same mistakes. Read it at session start, update it when you learn something.
 
 ## Detailed Guide
 
