@@ -12,22 +12,28 @@ from datetime import datetime
 from pathlib import Path
 
 CONFIG_PATH = Path.home() / ".claude" / "comms" / "config"
+MAX_RESPONSE_SIZE = 1024 * 1024  # 1MB
 
-FRIENDLY_NAMES = ["Sysadmin", "Web", "App", "Misc", "Integr1", "Integr2", "AlexOps", "AlexMisc"]
+# Agent names available for assignment. Customize for your team.
+FRIENDLY_NAMES = ["Sysadmin", "Web", "App", "Misc"]
 
 # Agents that should see messages from ALL projects (cross-project roles)
-CROSS_PROJECT_AGENTS = ["Sysadmin", "AlexOps"]
+CROSS_PROJECT_AGENTS = ["Sysadmin"]
 
 # Known project directory prefixes → project name.
+# Customize: map your worktree directory prefixes to project names.
+# Example: if your project is "myapp" with worktrees myapp-web/, myapp-api/:
+#   "myapp": "myapp"
 PROJECT_DIRS = {
-    "zenvoy": "zenvoy",
-    "signaturefinder": "signaturefinder",
-    "poker-ai": "poker-ai",
-    "github": "zenvoy",
+    # "myproject": "myproject",
 }
 
-# Exact directory-to-name mappings
-DIR_MAP = {"github": "Sysadmin", "signaturefinder": "SignatureFinder", "poker-ai": "PokerAI", "zenvoy-ops": "AlexOps"}
+# Exact directory-to-name mappings.
+# Customize: map specific directory names to agent names.
+# Example: "myproject-web" → "Web"
+DIR_MAP = {
+    # "myproject-web": "Web",
+}
 
 
 def detect_project(cwd):
@@ -43,8 +49,23 @@ def detect_project(cwd):
     return "general"
 
 
+def parse_time(ts):
+    """Parse an ISO timestamp to HH:MM:SS, with fallback."""
+    try:
+        return datetime.fromisoformat(ts.replace("Z", "+00:00")).strftime("%H:%M:%S")
+    except (ValueError, TypeError):
+        return ts[:8] if ts else "??:??:??"
+
+
+_config_cache = None
+
+
 def load_config():
     """Load API URL and secret from config file or env vars."""
+    global _config_cache
+    if _config_cache:
+        return _config_cache
+
     url = os.environ.get("COMMS_API_URL", "")
     secret = os.environ.get("COMMS_API_SECRET", "")
 
@@ -66,7 +87,8 @@ def load_config():
         print("Error: COMMS_API_URL not set. Create ~/.claude/comms/config or set env var.", file=sys.stderr)
         sys.exit(1)
 
-    return url.rstrip("/"), secret
+    _config_cache = (url.rstrip("/"), secret)
+    return _config_cache
 
 
 def api_call(method, path, data=None, params=None, fail_silent=False):
@@ -85,8 +107,8 @@ def api_call(method, path, data=None, params=None, fail_silent=False):
     req.add_header("Content-Type", "application/json")
 
     try:
-        with urllib.request.urlopen(req, timeout=3) as resp:
-            return json.loads(resp.read().decode())
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return json.loads(resp.read(MAX_RESPONSE_SIZE).decode())
     except urllib.error.HTTPError as e:
         if fail_silent:
             return None
@@ -120,6 +142,11 @@ def auto_assign(session_id, cwd):
     return None
 
 
+def cmd_detect_project(args):
+    """Print the detected project name for a given directory."""
+    print(detect_project(args.cwd))
+
+
 def cmd_resolve_name(args):
     print(resolve_name(args.session_id))
 
@@ -138,6 +165,10 @@ def cmd_assign(args):
         print(f"\nAvailable names: {', '.join(FRIENDLY_NAMES)}")
         print("Usage: comms assign <name> <session_id>")
         return
+
+    if not args.agent_id:
+        print("Error: session_id is required. Usage: comms assign <name> <session_id>", file=sys.stderr)
+        sys.exit(1)
 
     result = api_call("POST", "/api/comms/agents", data={"session_id": args.agent_id, "name": args.name})
     if result:
@@ -165,10 +196,7 @@ def cmd_check(args):
             sender = msg.get("sender", "?")
             text = msg.get("message", "")
             msg_project = msg.get("project", "")
-            try:
-                time_str = datetime.fromisoformat(ts.replace("Z", "+00:00")).strftime("%H:%M:%S")
-            except (ValueError, TypeError):
-                time_str = "??:??:??"
+            time_str = parse_time(ts)
             directed = text.lower().startswith(agent_name.lower() + ":") or text.lower().startswith(agent_name.lower() + ",")
             tag = " >>> FOR YOU" if directed else ""
             proj_tag = f" [{msg_project}]" if agent_name in CROSS_PROJECT_AGENTS and msg_project else ""
@@ -194,11 +222,7 @@ def format_msg(msg):
     sender = msg.get("sender", "?")
     text = msg.get("message", "")
     project = msg.get("project", "general")
-    try:
-        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
-        time_str = dt.strftime("%H:%M:%S")
-    except (ValueError, TypeError):
-        time_str = ts[:8] if ts else "??:??:??"
+    time_str = parse_time(ts)
     return f"{time_str} [{project}] {sender:<18} {text}"
 
 
@@ -328,45 +352,44 @@ def cmd_status(args):
         project = a.get("project", "?")
         sid = a.get("sessionId", "?")[:12]
         created = a.get("createdAt", "?")
-        try:
-            ts = datetime.fromisoformat(created.replace("Z", "+00:00")).strftime("%H:%M:%S")
-        except (ValueError, TypeError):
-            ts = created[:8] if created else "?"
-        print(f"{name:<20} {project:<18} {sid:<14} {ts:<12}")
+        print(f"{name:<20} {project:<18} {sid:<14} {parse_time(created):<12}")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Agent comms")
+    parser = argparse.ArgumentParser(description="Agent comms — multi-agent group chat CLI")
     sub = parser.add_subparsers(dest="command")
 
-    p_post = sub.add_parser("post")
+    p_post = sub.add_parser("post", help="Post a message to the chat")
     p_post.add_argument("-s", "--sender", default="nick")
     p_post.add_argument("-c", "--channel", default="general")
     p_post.add_argument("-p", "--project", default="general")
     p_post.add_argument("message", nargs="+")
 
-    p_history = sub.add_parser("history")
+    p_history = sub.add_parser("history", help="Show recent messages")
     p_history.add_argument("n", nargs="?", type=int, default=20)
     p_history.add_argument("-p", "--project", default=None, help="Filter by project")
 
-    sub.add_parser("watch")
-    p_chat = sub.add_parser("chat")
+    sub.add_parser("watch", help="Watch for new messages (polling)")
+    p_chat = sub.add_parser("chat", help="Interactive chat mode")
     p_chat.add_argument("-p", "--project", default="general", help="Project to scope messages to")
-    sub.add_parser("status")
+    sub.add_parser("status", help="Show registered agents")
 
-    p_resolve = sub.add_parser("resolve-name")
+    p_resolve = sub.add_parser("resolve-name", help="Resolve session ID to agent name")
     p_resolve.add_argument("session_id")
 
-    p_assign = sub.add_parser("assign")
+    p_assign = sub.add_parser("assign", help="Assign a friendly name to a session")
     p_assign.add_argument("name", nargs="?", default=None)
     p_assign.add_argument("agent_id", nargs="?", default=None)
 
-    p_check = sub.add_parser("check")
+    p_check = sub.add_parser("check", help="Get unread messages for a session")
     p_check.add_argument("session_id")
 
-    p_auto = sub.add_parser("auto-assign")
+    p_auto = sub.add_parser("auto-assign", help="Auto-assign name from directory")
     p_auto.add_argument("session_id")
     p_auto.add_argument("cwd")
+
+    p_detect = sub.add_parser("detect-project", help="Detect project name from directory path")
+    p_detect.add_argument("cwd")
 
     args = parser.parse_args()
     if not args.command:
@@ -383,6 +406,7 @@ def main():
         "assign": cmd_assign,
         "check": cmd_check,
         "auto-assign": lambda a: print(auto_assign(a.session_id, a.cwd) or ""),
+        "detect-project": cmd_detect_project,
     }[args.command](args)
 
 

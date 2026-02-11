@@ -23,25 +23,14 @@ if [ -z "$SESSION_ID" ]; then
     exit 0
 fi
 
-# Derive project from CWD for scoping messages (client-side, avoids API call)
+# Derive project from CWD using comms.py detect-project (single source of truth)
 CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
-PROJECT=$(python3 -c "
-import os
-cwd = '$CWD'
-dirname = os.path.basename(cwd).lower() if cwd else ''
-project_dirs = {'zenvoy': 'zenvoy', 'signaturefinder': 'signaturefinder', 'poker-ai': 'poker-ai', 'github': 'zenvoy'}
-if dirname in project_dirs:
-    print(project_dirs[dirname])
-else:
-    found = False
-    for prefix, proj in project_dirs.items():
-        if dirname.startswith(prefix + '-'):
-            print(proj)
-            found = True
-            break
-    if not found:
-        print('general')
-" 2>/dev/null || echo "general")
+PROJECT=$(python3 "$COMMS" detect-project "$CWD" 2>/dev/null || echo "general")
+
+# Only managed projects participate in comms — skip unknown directories
+if [ "$PROJECT" = "general" ]; then
+    exit 0
+fi
 
 case "$MODE" in
     session-start)
