@@ -24,13 +24,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          set -e
+          set -euo pipefail
 
           REPO="${{ github.repository }}"
           OWNER="${{ github.repository_owner }}"
           REPO_NAME="${{ github.event.repository.name }}"
 
-          # Handle pull_request, pull_request_review, and workflow_dispatch events
+          # Determine PR number from event context
           if [ -n "${{ github.event.inputs.pr_number }}" ]; then
             PR_NUMBER="${{ github.event.inputs.pr_number }}"
           elif [ -n "${{ github.event.pull_request.number }}" ]; then
@@ -45,10 +45,10 @@ jobs:
           echo "Checking Copilot review on PR #$PR_NUMBER"
 
           # Check if Copilot has reviewed (COMMENTED or APPROVED, not DISMISSED)
-          REVIEWS=$(gh api "repos/$REPO/pulls/$PR_NUMBER/reviews" 2>&1) || {
-            echo "::error::Failed to fetch reviews: $REVIEWS"
+          if ! REVIEWS=$(gh api "repos/$REPO/pulls/$PR_NUMBER/reviews"); then
+            echo "::error::Failed to fetch reviews"
             exit 1
-          }
+          fi
 
           COPILOT_REVIEW=$(echo "$REVIEWS" | jq -r '
             [.[] | select(
@@ -65,54 +65,64 @@ jobs:
           echo "Copilot has reviewed (state: $COPILOT_REVIEW)"
 
           # Use GraphQL to count unresolved, non-outdated Copilot review threads
-          # Paginates through all threads to avoid missing any beyond the first page
+          # Paginates through all threads to handle PRs with >100 threads
           UNRESOLVED=0
           HAS_NEXT=true
           CURSOR=""
 
-          while [ "$HAS_NEXT" = "true" ]; do
-            if [ -z "$CURSOR" ]; then
-              AFTER_CLAUSE=""
-            else
-              AFTER_CLAUSE=", after: \"$CURSOR\""
-            fi
-
-            QUERY="
-            query(\$owner: String!, \$repo: String!, \$pr: Int!) {
-              repository(owner: \$owner, name: \$repo) {
-                pullRequest(number: \$pr) {
-                  reviewThreads(first: 100${AFTER_CLAUSE}) {
-                    pageInfo {
-                      hasNextPage
-                      endCursor
-                    }
-                    nodes {
-                      isResolved
-                      isOutdated
-                      comments(first: 1) {
-                        nodes {
-                          author {
-                            login
-                          }
+          QUERY='
+          query($owner: String!, $repo: String!, $pr: Int!, $after: String) {
+            repository(owner: $owner, name: $repo) {
+              pullRequest(number: $pr) {
+                reviewThreads(first: 100, after: $after) {
+                  pageInfo {
+                    hasNextPage
+                    endCursor
+                  }
+                  nodes {
+                    isResolved
+                    isOutdated
+                    comments(first: 1) {
+                      nodes {
+                        author {
+                          login
                         }
                       }
                     }
                   }
                 }
               }
-            }"
+            }
+          }'
 
-            RESULT=$(gh api graphql -f query="$QUERY" \
-              -F owner="$OWNER" \
-              -F repo="$REPO_NAME" \
-              -F pr="$PR_NUMBER" 2>&1) || {
-              echo "::error::GraphQL query failed: $RESULT"
+          while [ "$HAS_NEXT" = "true" ]; do
+            # Build gh api args — omit -F after on first page (null = no cursor)
+            GH_ARGS=(-f query="$QUERY" -F owner="$OWNER" -F repo="$REPO_NAME" -F pr="$PR_NUMBER")
+            if [ -n "$CURSOR" ]; then
+              GH_ARGS+=(-f after="$CURSOR")
+            fi
+
+            if ! RESULT=$(gh api graphql "${GH_ARGS[@]}"); then
+              echo "::error::GraphQL query failed"
+              exit 1
+            fi
+
+            # Fail closed: check for GraphQL-level errors (gh can exit 0 with errors array)
+            GQL_ERRORS=$(echo "$RESULT" | jq -r '.errors // empty')
+            if [ -n "$GQL_ERRORS" ]; then
+              echo "::error::GraphQL returned errors: $GQL_ERRORS"
+              exit 1
+            fi
+
+            # Validate response structure
+            THREADS_DATA=$(echo "$RESULT" | jq -e '.data.repository.pullRequest.reviewThreads') || {
+              echo "::error::Unexpected GraphQL response structure"
               exit 1
             }
 
             # Count unresolved, non-outdated Copilot threads in this page
-            PAGE_UNRESOLVED=$(echo "$RESULT" | jq '
-              [.data.repository.pullRequest.reviewThreads.nodes[] |
+            PAGE_UNRESOLVED=$(echo "$THREADS_DATA" | jq '
+              [.nodes[] |
                 select(
                   .isResolved == false and
                   .isOutdated == false and
@@ -120,10 +130,17 @@ jobs:
                 )
               ] | length
             ')
+
+            # Validate count is a number
+            if ! [ "$PAGE_UNRESOLVED" -eq "$PAGE_UNRESOLVED" ] 2>/dev/null; then
+              echo "::error::Failed to parse thread count: $PAGE_UNRESOLVED"
+              exit 1
+            fi
+
             UNRESOLVED=$((UNRESOLVED + PAGE_UNRESOLVED))
 
-            HAS_NEXT=$(echo "$RESULT" | jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage')
-            CURSOR=$(echo "$RESULT" | jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.endCursor')
+            HAS_NEXT=$(echo "$THREADS_DATA" | jq -r '.pageInfo.hasNextPage')
+            CURSOR=$(echo "$THREADS_DATA" | jq -r '.pageInfo.endCursor // empty')
           done
 
           echo "Unresolved Copilot threads (non-outdated): $UNRESOLVED"
