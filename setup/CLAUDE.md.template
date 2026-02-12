@@ -32,6 +32,15 @@ You are in a persistent worktree. Your workflow:
 
 **Never push directly to [DEFAULT_BRANCH].**
 
+## Copilot Review Gate — MANDATORY
+
+NEVER merge a PR with unresolved Copilot review comments.
+NEVER use `--admin` to bypass branch protection.
+NEVER manually set the Copilot Review Gate status via `gh api statuses`.
+
+The review gate workflow checks for unresolved threads via GraphQL — not just comment count.
+If the gate is stuck PENDING, push an empty commit to re-trigger; do NOT set the status manually.
+
 ## Group Chat (Comms)
 
 You are on a group chat with other agents and the human.

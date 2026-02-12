@@ -8,37 +8,37 @@ on:
 
 permissions:
   pull-requests: read
-  statuses: write
 
 jobs:
-  check-copilot-review:
-    name: Copilot Review Required
+  copilot-review-gate:
+    name: Copilot Review Gate
     runs-on: ubuntu-latest
     steps:
-      - name: Check for Copilot review
+      - name: Check for Copilot review and unresolved threads
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
 
           REPO="${{ github.repository }}"
+          OWNER="${{ github.repository_owner }}"
+          REPO_NAME="${{ github.event.repository.name }}"
 
           # Handle both pull_request and pull_request_review events
           if [ -n "${{ github.event.pull_request.number }}" ]; then
             PR_NUMBER="${{ github.event.pull_request.number }}"
-            SHA="${{ github.event.pull_request.head.sha }}"
           elif [ -n "${{ github.event.review.pull_request.number }}" ]; then
             PR_NUMBER="${{ github.event.review.pull_request.number }}"
-            SHA="${{ github.event.review.pull_request.head.sha }}"
           else
             echo "Could not determine PR number from event"
             exit 0
           fi
 
-          echo "Checking for Copilot review on PR #$PR_NUMBER (sha: $SHA)"
+          echo "Checking Copilot review on PR #$PR_NUMBER"
 
+          # Check if Copilot has reviewed (COMMENTED or APPROVED, not DISMISSED)
           REVIEWS=$(gh api "repos/$REPO/pulls/$PR_NUMBER/reviews" 2>&1) || {
-            echo "Error: Failed to fetch reviews: $REVIEWS"
+            echo "::error::Failed to fetch reviews: $REVIEWS"
             exit 1
           }
 
@@ -50,32 +50,58 @@ jobs:
           ')
 
           if [ -z "$COPILOT_REVIEW" ]; then
-            echo "Copilot has not reviewed yet - setting pending status"
-            gh api "repos/$REPO/statuses/$SHA" \
-              -f state=pending \
-              -f context="Copilot Review Gate" \
-              -f description="Waiting for Copilot review (2-5 min)" \
-              -f target_url="https://github.com/$REPO/pull/$PR_NUMBER"
-          else
-            echo "Copilot has reviewed (state: $COPILOT_REVIEW)"
-
-            COMMENT_COUNT=$(gh api "repos/$REPO/pulls/$PR_NUMBER/comments" \
-              --jq '[.[] | select(.user.login == "copilot-pull-request-reviewer[bot]")] | length' 2>/dev/null || echo "0")
-            echo "Copilot comments: $COMMENT_COUNT"
-
-            if [ "$COMMENT_COUNT" -gt 0 ]; then
-              echo "Copilot left $COMMENT_COUNT comment(s) - setting failure status"
-              gh api "repos/$REPO/statuses/$SHA" \
-                -f state=failure \
-                -f context="Copilot Review Gate" \
-                -f description="Copilot left $COMMENT_COUNT comment(s) — resolve before merging" \
-                -f target_url="https://github.com/$REPO/pull/$PR_NUMBER"
-            else
-              echo "No Copilot comments - setting success status"
-              gh api "repos/$REPO/statuses/$SHA" \
-                -f state=success \
-                -f context="Copilot Review Gate" \
-                -f description="Copilot reviewed — no comments" \
-                -f target_url="https://github.com/$REPO/pull/$PR_NUMBER"
-            fi
+            echo "::error::Copilot has not reviewed yet. Waiting for review (2-5 min). Workflow re-runs automatically when Copilot submits."
+            exit 1
           fi
+
+          echo "Copilot has reviewed (state: $COPILOT_REVIEW)"
+
+          # Use GraphQL to count unresolved, non-outdated Copilot review threads
+          QUERY='
+          query($owner: String!, $repo: String!, $pr: Int!) {
+            repository(owner: $owner, name: $repo) {
+              pullRequest(number: $pr) {
+                reviewThreads(first: 100) {
+                  nodes {
+                    isResolved
+                    isOutdated
+                    comments(first: 1) {
+                      nodes {
+                        author {
+                          login
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }'
+
+          RESULT=$(gh api graphql -f query="$QUERY" \
+            -F owner="$OWNER" \
+            -F repo="$REPO_NAME" \
+            -F pr="$PR_NUMBER" 2>&1) || {
+            echo "::error::GraphQL query failed: $RESULT"
+            exit 1
+          }
+
+          # Count unresolved, non-outdated Copilot threads
+          UNRESOLVED=$(echo "$RESULT" | jq '
+            [.data.repository.pullRequest.reviewThreads.nodes[] |
+              select(
+                .isResolved == false and
+                .isOutdated == false and
+                (.comments.nodes[0].author.login == "copilot-pull-request-reviewer[bot]")
+              )
+            ] | length
+          ')
+
+          echo "Unresolved Copilot threads (non-outdated): $UNRESOLVED"
+
+          if [ "$UNRESOLVED" -gt 0 ]; then
+            echo "::error::$UNRESOLVED unresolved Copilot review thread(s). Fix the code or resolve threads before merging."
+            exit 1
+          fi
+
+          echo "All Copilot review threads resolved. Gate passed."
