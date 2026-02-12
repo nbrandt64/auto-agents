@@ -5,6 +5,8 @@ on:
     types: [opened, synchronize, reopened]
   pull_request_review:
     types: [submitted]
+  pull_request_review_thread:
+    types: [resolved, unresolved]
   workflow_dispatch:
     inputs:
       pr_number:
@@ -37,6 +39,8 @@ jobs:
             PR_NUMBER="${{ github.event.pull_request.number }}"
           elif [ -n "${{ github.event.review.pull_request.number }}" ]; then
             PR_NUMBER="${{ github.event.review.pull_request.number }}"
+          elif [ -n "${{ github.event.pull_request_review_thread.pull_request.number }}" ]; then
+            PR_NUMBER="${{ github.event.pull_request_review_thread.pull_request.number }}"
           else
             echo "::error::Could not determine PR number from event"
             exit 1
@@ -45,8 +49,8 @@ jobs:
           echo "Checking Copilot review on PR #$PR_NUMBER"
 
           # Check if Copilot has reviewed (COMMENTED or APPROVED, not DISMISSED)
-          if ! REVIEWS=$(gh api "repos/$REPO/pulls/$PR_NUMBER/reviews"); then
-            echo "::error::Failed to fetch reviews"
+          if ! REVIEWS=$(gh api "repos/$REPO/pulls/$PR_NUMBER/reviews" 2>/dev/null); then
+            echo "::error::Failed to fetch reviews for PR #$PR_NUMBER"
             exit 1
           fi
 
@@ -102,15 +106,15 @@ jobs:
               GH_ARGS+=(-f after="$CURSOR")
             fi
 
-            if ! RESULT=$(gh api graphql "${GH_ARGS[@]}"); then
-              echo "::error::GraphQL query failed"
+            if ! RESULT=$(gh api graphql "${GH_ARGS[@]}" 2>/dev/null); then
+              echo "::error::GraphQL query failed for PR #$PR_NUMBER"
               exit 1
             fi
 
             # Fail closed: check for GraphQL-level errors (gh can exit 0 with errors array)
-            GQL_ERRORS=$(echo "$RESULT" | jq -r '.errors // empty')
-            if [ -n "$GQL_ERRORS" ]; then
-              echo "::error::GraphQL returned errors: $GQL_ERRORS"
+            GQL_ERROR_COUNT=$(echo "$RESULT" | jq '[.errors // [] | length] | .[0]')
+            if [ "$GQL_ERROR_COUNT" -gt 0 ] 2>/dev/null; then
+              echo "::error::GraphQL returned errors: $(echo "$RESULT" | jq -c '.errors')"
               exit 1
             fi
 
