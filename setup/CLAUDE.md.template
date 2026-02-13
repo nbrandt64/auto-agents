@@ -64,3 +64,15 @@ python3 ~/.claude/scripts/comms.py post -s "[AGENT_NAME]" "your message"
 ### When NOT to Post
 - Routine file reads or edits within your sector
 - Every individual command you run
+
+## Code Quality
+
+### Keep It Simple
+- No abstractions for single-use code — three similar lines beats a premature helper
+- No error handling for impossible scenarios — only validate at system boundaries
+- If it could be simpler, make it simpler
+
+### Verify Your Work
+- Turn tasks into verifiable success criteria before starting
+- "Fix bug" → reproduce first, then fix, then confirm it's gone
+- Don't declare done until you've confirmed it actually works
