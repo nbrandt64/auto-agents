@@ -10,7 +10,7 @@
 #   your-project-web/
 #   your-project-api/
 #   your-project-data/
-#   your-project-sysadmin/
+#   your-project-github/
 
 set -euo pipefail
 
@@ -20,7 +20,7 @@ PARENT_DIR=$(dirname "$REPO_DIR")
 DEFAULT_BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null || echo "main")
 
 # Agent names — customize these for your project
-AGENTS=("web" "api" "data" "sysadmin")
+AGENTS=("web" "api" "data" "github")
 
 echo "Project: $REPO_NAME"
 echo "Default branch: $DEFAULT_BRANCH"

@@ -15,10 +15,10 @@ CONFIG_PATH = Path.home() / ".claude" / "comms" / "config"
 MAX_RESPONSE_SIZE = 1024 * 1024  # 1MB
 
 # Agent names available for assignment. Customize for your team.
-FRIENDLY_NAMES = ["Sysadmin", "Web", "App", "Misc"]
+FRIENDLY_NAMES = ["GitHub", "Web", "App", "Misc"]
 
 # Agents that should see messages from ALL projects (cross-project roles)
-CROSS_PROJECT_AGENTS = ["Sysadmin"]
+CROSS_PROJECT_AGENTS = ["GitHub"]
 
 # Known project directory prefixes → project name.
 # Customize: map your worktree directory prefixes to project names.
@@ -299,7 +299,7 @@ def cmd_chat(args):
                         sys.stdout.write("\r" + " " * (len(input_buf) + 2) + "\r")
                         sys.stdout.flush()
                         api_call("POST", "/api/comms/messages", data={
-                            "sender": "nick",
+                            "sender": "user",
                             "message": input_buf.strip(),
                             "channel": "general",
                             "project": args.project,
@@ -360,7 +360,7 @@ def main():
     sub = parser.add_subparsers(dest="command")
 
     p_post = sub.add_parser("post", help="Post a message to the chat")
-    p_post.add_argument("-s", "--sender", default="nick")
+    p_post.add_argument("-s", "--sender", default="user")
     p_post.add_argument("-c", "--channel", default="general")
     p_post.add_argument("-p", "--project", default="general")
     p_post.add_argument("message", nargs="+")

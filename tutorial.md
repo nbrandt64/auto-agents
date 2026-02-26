@@ -54,6 +54,9 @@ The hooks config should look like this:
 
 ```json
 {
+  "env": {
+    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "80"
+  },
   "hooks": {
     "SessionStart": [
       { "type": "command", "command": "bash ~/.claude/scripts/comms.sh session-start" }
@@ -71,7 +74,17 @@ The hooks config should look like this:
 }
 ```
 
-## Step 5: Create your project repo
+## Step 5: Install skills
+
+Copy the example skills so all agents have access to `/tdd`, `/review`, `/pr-process`, and `/copilot-loop`:
+
+```bash
+cp -r /path/to/auto-agents/setup/skills/* ~/.claude/skills/
+```
+
+Edit `~/.claude/skills/pr-process/SKILL.md` and `~/.claude/skills/copilot-loop/SKILL.md` to replace `OWNER/REPO` with your GitHub org and repo names.
+
+## Step 6: Create your project repo
 
 Set up a new repo on GitHub for the sample app:
 
@@ -82,7 +95,7 @@ git init && git add -A && git commit -m "feat: initial project structure"
 gh repo create taskflow --private --push --source=.
 ```
 
-## Step 6: Add the Copilot review workflow
+## Step 7: Add the Copilot review workflow
 
 ```bash
 mkdir -p .github/workflows
@@ -91,7 +104,7 @@ git add .github/workflows && git commit -m "ci: add Copilot review gate"
 git push
 ```
 
-## Step 7: Set up branch protection
+## Step 8: Set up branch protection
 
 Go to your repo settings on GitHub, or use the CLI:
 
@@ -104,24 +117,28 @@ gh api repos/OWNER/taskflow/branches/main/protection -X PUT \
   -f "restrictions=null"
 ```
 
-## Step 8: Create agent worktrees
+## Step 9: Create agent worktrees
 
 ```bash
 cd /path/to/taskflow
 bash /path/to/auto-agents/setup/setup-worktrees.sh
 ```
 
-This creates `taskflow-web/`, `taskflow-api/`, `taskflow-data/`, and `taskflow-sysadmin/` as sibling directories.
+This creates `taskflow-web/`, `taskflow-api/`, `taskflow-data/`, and `taskflow-github/` as sibling directories.
 
-## Step 9: Add CLAUDE.md to the repo
+## Step 10: Add CLAUDE.md and shared memory files
 
 ```bash
 cp /path/to/auto-agents/setup/CLAUDE.md.template CLAUDE.md
+
+# Create shared memory files
+echo "# Decisions\n\nArchitectural decisions, API contracts, and conventions shared across all agents." > DECISIONS.md
+touch CHECKPOINT.md
 ```
 
-Edit the template to fill in your project name, default branch, and agent sectors. Commit and push, then pull in each worktree so every agent has the same CLAUDE.md.
+Edit the CLAUDE.md template to fill in your project name, default branch, and agent sectors. Commit and push, then pull in each worktree so every agent has the same files.
 
-## Step 10: Launch the agents
+## Step 11: Launch the agents
 
 Open four terminal tabs:
 
@@ -136,10 +153,10 @@ cd /path/to/taskflow-api && claude
 cd /path/to/taskflow-data && claude
 
 # Tab 4
-cd /path/to/taskflow-sysadmin && claude
+cd /path/to/taskflow-github && claude
 ```
 
-## Step 11: Watch the chat
+## Step 12: Watch the chat
 
 Open a fifth terminal tab:
 
@@ -153,13 +170,13 @@ You'll see session start messages as each agent comes online. You can also join 
 python3 ~/.claude/scripts/comms.py chat
 ```
 
-## Step 12: Give them work
+## Step 13: Give them work
 
 In each agent's terminal, give them their first task. For the sample TaskFlow app:
 
 - **Web**: "Build a React component that displays a list of tasks from the API"
 - **API**: "Create Express routes for CRUD operations on tasks"
 - **Data**: "Set up the SQLite schema and query functions for a tasks table"
-- **Sysadmin**: "Monitor the group chat and process PRs as they come in"
+- **GitHub**: "Monitor the group chat, process PRs, check error logs, and assign tasks"
 
-Watch the group chat as they coordinate. You'll see agents asking each other for interfaces, announcing completed work, and the Sysadmin creating and merging PRs.
+Watch the group chat as they coordinate. You'll see agents asking each other for interfaces, announcing completed work, and the GitHub agent processing PRs and assigning tasks from error logs.

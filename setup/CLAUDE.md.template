@@ -76,3 +76,33 @@ python3 ~/.claude/scripts/comms.py post -s "[AGENT_NAME]" "your message"
 - Turn tasks into verifiable success criteria before starting
 - "Fix bug" → reproduce first, then fix, then confirm it's gone
 - Don't declare done until you've confirmed it actually works
+
+## Development Principles
+
+### TDD (Test-Driven Development)
+Follow the red-green-refactor cycle:
+1. **Red** — Write a failing test that defines expected behavior
+2. **Green** — Write the minimum code to make the test pass
+3. **Refactor** — Clean up while keeping tests green
+
+No untested feature code. If you're writing a feature, write the test first.
+
+### Ralph Loops
+For task lists and sustained autonomous work, iterate sequentially:
+1. Pick the next task from the list
+2. Complete it fully (implement, test, verify)
+3. Mark it done and move to the next
+4. Continue until all tasks are complete
+
+Don't jump between tasks. Finish one before starting another.
+
+## Memory & Checkpointing
+
+### Private Memory (Automatic)
+Claude Code maintains persistent memory at `~/.claude/projects/<path>/memory/MEMORY.md`. This survives across sessions. Save stable patterns, key file paths, and debugging insights there. Don't save session-specific state — that's what checkpointing is for.
+
+### Shared Memory
+The file `DECISIONS.md` in the repo root tracks cross-agent knowledge: architectural decisions, API contracts, known issues. When you make or learn about a decision that affects other agents, add it there and commit. Check it at session start.
+
+### Checkpointing (Crash Recovery)
+Before starting complex work, write a `CHECKPOINT.md` in the repo root with your current task, completed steps, and next steps. Update it as you complete each major step. If your session crashes mid-task, the next session reads it and picks up where you left off. Clear it when the task is complete.

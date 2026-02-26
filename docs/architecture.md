@@ -70,7 +70,7 @@ Agents are expected to poll for Copilot comments, fix them, push, and wait for r
 
 1. **Agent starts**: Claude Code launches in a worktree. The SessionStart hook calls `comms.py auto-assign` to register the agent name, then `comms.py post` to announce the session.
 
-2. **Agent works**: The agent reads files, writes code, runs tests. Before each tool use, the PreToolUse hook runs `comms.py check`. If another agent (or Nick) posted a message for this agent, it appears inline and the agent can act on it.
+2. **Agent works**: The agent reads files, writes code, runs tests. Before each tool use, the PreToolUse hook runs `comms.py check`. If another agent (or the user) posted a message for this agent, it appears inline and the agent can act on it.
 
 3. **Agent commits and pushes**: After a git push, the PostToolUse hook detects the git operation and posts to the group chat: "Web: pushed feat/user-profile to origin."
 
@@ -78,7 +78,7 @@ Agents are expected to poll for Copilot comments, fix them, push, and wait for r
 
 5. **Copilot reviews**: GitHub Copilot automatically reviews the PR. The Actions workflow checks the review status. If comments exist, the agent reads them via `gh api`, fixes the code, pushes again, and waits for re-review.
 
-6. **Gate passes, PR merges**: Once Copilot leaves zero comments, the gate status flips to `success`. The agent (or a sysadmin agent) merges the PR and posts a notification so all agents pull the latest changes.
+6. **Gate passes, PR merges**: Once Copilot leaves zero comments, the gate status flips to `success`. The agent (or the GitHub agent) merges the PR and posts a notification so all agents pull the latest changes.
 
 ## Project Scoping
 
@@ -86,10 +86,10 @@ Messages in the comms system are scoped by **project**. Each agent is associated
 
 This means agents working on different repos don't see each other's noise. A Web agent on project "taskflow" only sees messages tagged with "taskflow" or "general" -- not messages from agents on "other-project".
 
-**Cross-project agents** are the exception. Agents like Sysadmin that orchestrate across repos see messages from all projects. Their `check` output includes a `[project]` tag on each message so they know which project it came from.
+**Cross-project agents** are the exception. Agents like the GitHub agent that coordinate across repos see messages from all projects. Their `check` output includes a `[project]` tag on each message so they know which project it came from.
 
 Project detection follows this priority:
-1. Exact match in directory-to-project mapping (e.g., `github` → `zenvoy`)
+1. Exact match in directory-to-project mapping (configured in `comms.py` `PROJECT_DIRS`)
 2. Prefix match (e.g., directory `taskflow-web` matches prefix `taskflow`)
 3. Falls back to `general`
 
@@ -103,6 +103,14 @@ The system uses a config file at `~/.claude/comms/config`:
 | `COMMS_API_SECRET` | Shared Bearer token for API authentication |
 
 Environment variables override config file values. Agent names and project mappings are built into `comms.py` and the server-side API.
+
+## Memory & Checkpointing
+
+Three layers of persistence reduce session ramp-up and handle crash recovery:
+
+- **Private memory**: Claude Code's built-in auto memory (`~/.claude/projects/<path>/memory/MEMORY.md`). Per-agent, per-project. Survives across sessions. Agents save stable patterns and debugging insights here.
+- **Shared memory**: A committed `DECISIONS.md` file in the repo root. All worktrees see it via shared git history. Agents record architectural decisions and conventions that affect other agents.
+- **Checkpointing**: A `CHECKPOINT.md` file in the repo root. Agents write current task, completed steps, and next steps before complex work. On crash/freeze, the next session reads it and resumes. Cleared on task completion.
 
 ## Security Notes
 
