@@ -59,16 +59,16 @@ The hooks config should look like this:
   },
   "hooks": {
     "SessionStart": [
-      { "type": "command", "command": "bash ~/.claude/scripts/comms.sh session-start" }
+      { "hooks": [{ "type": "command", "command": "bash ~/.claude/scripts/comms.sh session-start" }] }
     ],
     "Stop": [
-      { "type": "command", "command": "bash ~/.claude/scripts/comms.sh session-end" }
+      { "hooks": [{ "type": "command", "command": "bash ~/.claude/scripts/comms.sh session-end" }] }
     ],
     "PreToolUse": [
-      { "type": "command", "command": "bash ~/.claude/scripts/comms.sh check" }
+      { "hooks": [{ "type": "command", "command": "bash ~/.claude/scripts/comms.sh check" }] }
     ],
     "PostToolUse": [
-      { "matcher": "Bash", "type": "command", "command": "bash ~/.claude/scripts/comms.sh git-detect" }
+      { "matcher": "Bash", "hooks": [{ "type": "command", "command": "bash ~/.claude/scripts/comms.sh git-detect" }] }
     ]
   }
 }

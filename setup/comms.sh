@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# DEPRECATED: This file is superseded by auto-agents.py.
+# Use 'auto-agents' CLI instead. See README.md for details.
+# Kept for backward compatibility only.
+#
 # Agent comms hook wrapper — reads stdin JSON from Claude Code hooks
 set -euo pipefail
 
