@@ -20,6 +20,7 @@ permissions:
 jobs:
   copilot-review-gate:
     name: Copilot Review Gate
+    if: ${{ !github.event.repository.is_template }}
     runs-on: ubuntu-latest
     steps:
       - name: Check for Copilot review and unresolved threads
