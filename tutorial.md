@@ -76,7 +76,7 @@ The hooks config should look like this:
 
 ## Step 5: Install skills
 
-Copy the example skills so all agents have access to `/tdd`, `/review`, `/pr-process`, and `/copilot-loop`:
+Copy the example skills so all agents have access to `/begin-work`, `/tdd`, `/review`, `/pr-process`, and `/copilot-loop`:
 
 ```bash
 cp -r /path/to/auto-agents/setup/skills/* ~/.claude/skills/
@@ -178,5 +178,7 @@ In each agent's terminal, give them their first task. For the sample TaskFlow ap
 - **API**: "Create Express routes for CRUD operations on tasks"
 - **Data**: "Set up the SQLite schema and query functions for a tasks table"
 - **GitHub**: "Monitor the group chat, process PRs, check error logs, and assign tasks"
+
+Alternatively, agents can run `/begin-work` to orient themselves automatically — they'll read their CLAUDE.md, check shared decisions and any crash-recovery checkpoint, poll the group chat, and begin immediately if assigned work or announce they're ready if not.
 
 Watch the group chat as they coordinate. You'll see agents asking each other for interfaces, announcing completed work, and the GitHub agent processing PRs and assigning tasks from error logs.

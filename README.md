@@ -66,7 +66,7 @@ Supports two communication backends:
    cp -r setup/skills/* ~/.claude/skills/
    ```
 
-   This gives all agents access to `/tdd`, `/review`, `/pr-process`, and `/copilot-loop` slash commands. Customize repo names in the PR skills to match your setup.
+   This gives all agents access to `/begin-work`, `/tdd`, `/review`, `/pr-process`, and `/copilot-loop` slash commands. Customize repo names in the PR skills to match your setup.
 
 7. **Add a CLAUDE.md to each worktree**
 
@@ -159,6 +159,7 @@ auto-agents/
 │   ├── CLAUDE.md.template     # Per-agent instructions template
 │   ├── require-copilot-review.yml  # GitHub Actions workflow
 │   └── skills/                # Reusable slash command workflows
+│       ├── begin-work/SKILL.md    # /begin-work — session startup orientation
 │       ├── tdd/SKILL.md       # /tdd — test-driven development cycle
 │       ├── review/SKILL.md    # /review — code review checklist
 │       ├── pr-process/SKILL.md    # /pr-process — batch PR processing
