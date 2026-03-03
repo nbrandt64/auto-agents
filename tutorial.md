@@ -140,7 +140,26 @@ Edit the CLAUDE.md template to fill in your project name, default branch, and ag
 
 ## Step 11: Launch the agents
 
-Open four terminal tabs:
+On macOS, use `setup/start-agents.sh` to open all agents and the group chat in one command:
+
+```bash
+# Copy and configure
+cp /path/to/auto-agents/setup/start-agents.sh ./start-agents.sh
+# Edit start-agents.sh and set PROJECT_DIR to your project path
+chmod +x start-agents.sh
+./start-agents.sh
+```
+
+The script asks two questions before opening any tabs:
+
+```
+Skip permissions prompts? (--dangerously-skip-permissions) [y/N]
+Run /begin-work automatically on startup? [y/N]
+```
+
+Then it opens six Terminal tabs: four agents, one watch tab, and one interactive chat tab. If you opted into `/begin-work`, each agent immediately runs the orientation sequence — reading their CLAUDE.md, checking shared decisions and any crash-recovery checkpoint, and polling the group chat — before beginning work.
+
+Or launch manually:
 
 ```bash
 # Tab 1
@@ -172,13 +191,13 @@ python3 ~/.claude/scripts/comms.py chat
 
 ## Step 13: Give them work
 
-In each agent's terminal, give them their first task. For the sample TaskFlow app:
+If you chose to run `/begin-work` at startup, agents will have already oriented themselves by now. Otherwise, you can tell each agent to run `/begin-work` manually, or just give them their first task directly.
+
+To assign initial work, post tasks via the group chat or tell each agent directly in its terminal. For the sample TaskFlow app:
 
 - **Web**: "Build a React component that displays a list of tasks from the API"
 - **API**: "Create Express routes for CRUD operations on tasks"
 - **Data**: "Set up the SQLite schema and query functions for a tasks table"
 - **GitHub**: "Monitor the group chat, process PRs, check error logs, and assign tasks"
-
-Alternatively, agents can run `/begin-work` to orient themselves automatically — they'll read their CLAUDE.md, check shared decisions and any crash-recovery checkpoint, poll the group chat, and begin immediately if assigned work or announce they're ready if not.
 
 Watch the group chat as they coordinate. You'll see agents asking each other for interfaces, announcing completed work, and the GitHub agent processing PRs and assigning tasks from error logs.

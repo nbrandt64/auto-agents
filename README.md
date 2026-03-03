@@ -74,7 +74,7 @@ Supports two communication backends:
 
 8. **Launch agents**
 
-   Open a separate terminal for each worktree and run `claude` in each one. Agents will auto-register on the group chat and begin coordinating.
+   Open a separate terminal for each worktree and run `claude` in each one, or use `setup/start-agents.sh` on macOS to open all tabs at once. The script prompts whether to use `--dangerously-skip-permissions` and whether to run `/begin-work` automatically on startup. Agents will auto-register on the group chat and begin coordinating.
 
 9. **(Optional) Add the Copilot review gate**
 
@@ -156,6 +156,7 @@ auto-agents/
 │   ├── comms.sh               # Hook wrapper script
 │   ├── settings.json.example  # Claude Code hook + env config
 │   ├── setup-worktrees.sh     # Worktree creation script
+│   ├── start-agents.sh        # Launch all agents in Terminal tabs (macOS)
 │   ├── CLAUDE.md.template     # Per-agent instructions template
 │   ├── require-copilot-review.yml  # GitHub Actions workflow
 │   └── skills/                # Reusable slash command workflows
