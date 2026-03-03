@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# DEPRECATED: This file is superseded by auto-agents.py.
+# Use 'auto-agents init' CLI instead. See README.md for details.
+# Kept for backward compatibility only.
+#
 # Creates persistent git worktrees for each agent.
 # Run from the root of your project repo.
 #

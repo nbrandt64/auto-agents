@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# DEPRECATED: This file is superseded by auto-agents.py.
+# Use 'auto-agents' CLI instead. See README.md for details.
+# Kept for backward compatibility only.
 """Agent comms — HTTP API-backed chat for multi-agent coordination."""
 
 import argparse
