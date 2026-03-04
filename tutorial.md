@@ -140,24 +140,26 @@ Edit the CLAUDE.md template to fill in your project name, default branch, and ag
 
 ## Step 11: Launch the agents
 
-On macOS, use `setup/start-agents.sh` to open all agents and the group chat in one command:
+On macOS, use `auto-agents start` to open all agents and the group chat in one command:
 
 ```bash
-# Copy and configure
-cp /path/to/auto-agents/setup/start-agents.sh ./start-agents.sh
-# Edit start-agents.sh and set PROJECT_DIR to your project path
-chmod +x start-agents.sh
-./start-agents.sh
+auto-agents start
 ```
 
-The script asks two questions before opening any tabs:
+It asks two questions before opening any tabs:
 
 ```
-Skip permissions prompts? (--dangerously-skip-permissions) [y/N]
-Run /begin-work automatically on startup? [y/N]
+  Skip permissions prompts? (--dangerously-skip-permissions) [y/N]
+  Run /begin-work automatically on startup? [y/N]
 ```
 
-Then it opens six Terminal tabs: four agents, one watch tab, and one interactive chat tab. If you opted into `/begin-work`, each agent immediately runs the orientation sequence — reading their CLAUDE.md, checking shared decisions and any crash-recovery checkpoint, and polling the group chat — before beginning work.
+Or pass flags to skip the prompts:
+
+```bash
+auto-agents start --skip-permissions --begin-work
+```
+
+Then it opens Terminal tabs for each agent plus a watch tab and an interactive chat tab. If you opted into `--begin-work`, each agent immediately runs the orientation sequence — reading their CLAUDE.md, checking shared decisions and any crash-recovery checkpoint, and polling the group chat — before beginning work.
 
 Or launch manually:
 

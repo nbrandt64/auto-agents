@@ -107,7 +107,15 @@ auto-agents> /doctor        # Check environment prerequisites
 
 8. **Launch agents**
 
-   Open a separate terminal for each worktree and run `claude` in each one, or use `setup/start-agents.sh` on macOS to open all tabs at once. The script prompts whether to use `--dangerously-skip-permissions` and whether to run `/begin-work` automatically on startup. Agents will auto-register on the group chat and begin coordinating.
+   Open a separate terminal for each worktree and run `claude` in each one, or use `auto-agents start` on macOS to open all tabs at once:
+
+   ```bash
+   auto-agents start                        # interactive prompts
+   auto-agents start --skip-permissions     # skip dangerously-skip-permissions prompt
+   auto-agents start --begin-work           # auto-run /begin-work on startup
+   ```
+
+   Agents will auto-register on the group chat and begin coordinating.
 
 9. **(Optional) Add the Copilot review gate**
 
@@ -196,7 +204,7 @@ auto-agents/
 │   ├── comms.sh               # Hook wrapper script (legacy, still works)
 │   ├── settings.json.example  # Claude Code hook + env config
 │   ├── setup-worktrees.sh     # Worktree creation script (legacy)
-│   ├── start-agents.sh        # Launch all agents in Terminal tabs (macOS)
+│   ├── start-agents.sh        # Launch all agents in Terminal tabs — legacy, use 'auto-agents start'
 │   ├── CLAUDE.md.template     # Per-agent instructions template
 │   ├── require-copilot-review.yml  # GitHub Actions workflow
 │   ├── server/                # Self-hosted comms API server
@@ -244,6 +252,7 @@ The `auto-agents` CLI works in three modes:
 
 | Command | Description |
 |---------|-------------|
+| `/start` | Launch all agents in Terminal tabs (macOS) |
 | `/status` | Show project info, agents, and worktree status |
 | `/post <sender> <message>` | Send a message to the group chat |
 | `/watch` | Live-stream new messages (Ctrl+C to stop) |
