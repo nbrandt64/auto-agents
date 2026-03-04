@@ -29,7 +29,7 @@ Read `CHECKPOINT.md` in the repo root. If it has content, a previous session cra
 
 ### 5. Check the Group Chat
 ```bash
-python3 ~/.claude/scripts/comms.py check
+auto-agents check
 ```
 Look for messages tagged `>>> FOR YOU` and act on them first. Read others for context.
 

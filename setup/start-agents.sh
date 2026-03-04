@@ -60,5 +60,5 @@ EOF
 open_tab "cd '${AGENTS[1]}' && ${CLAUDE_CMD}"
 open_tab "cd '${AGENTS[2]}' && ${CLAUDE_CMD}"
 open_tab "cd '${AGENTS[3]}' && ${CLAUDE_CMD}"
-open_tab "python3 ~/.claude/scripts/comms.py watch"
-open_tab "python3 ~/.claude/scripts/comms.py chat"
+open_tab "auto-agents watch"
+open_tab "auto-agents chat"
