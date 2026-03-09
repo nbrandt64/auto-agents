@@ -116,11 +116,12 @@ def get_cross_project_agents():
 # ──────────────────────────────────────────────────────────────
 
 _config_cache = None
+_permissions_warned = False
 
 
 def load_config():
     """Load API URL and secret from config file or env vars."""
-    global _config_cache
+    global _config_cache, _permissions_warned
     if _config_cache:
         return _config_cache
 
@@ -128,13 +129,15 @@ def load_config():
     secret = os.environ.get("COMMS_API_SECRET", "")
 
     if CONFIG_PATH.exists():
-        # Warn if config file has overly permissive permissions
-        try:
-            mode = CONFIG_PATH.stat().st_mode & 0o777
-            if mode & 0o077:
-                print(f"  {YELLOW}Warning: {CONFIG_PATH} has permissions {oct(mode)}. Consider: chmod 600 {CONFIG_PATH}{RESET}", file=sys.stderr)
-        except OSError:
-            pass
+        # Warn once if config file has overly permissive permissions
+        if not _permissions_warned:
+            _permissions_warned = True
+            try:
+                mode = CONFIG_PATH.stat().st_mode & 0o777
+                if mode & 0o077:
+                    print(f"  {YELLOW}Warning: {CONFIG_PATH} has permissions {oct(mode)}. Consider: chmod 600 {CONFIG_PATH}{RESET}", file=sys.stderr)
+            except OSError:
+                pass
         for line in CONFIG_PATH.read_text().strip().splitlines():
             line = line.strip()
             if not line or line.startswith("#"):
@@ -897,27 +900,23 @@ def hook_handler(mode):
                             )
                             default_branch = br.stdout.strip() if br.returncode == 0 else ""
                             if default_branch:
-                                pull_result = subprocess.run(
+                                api_call(
+                                    "POST",
+                                    "/api/comms/messages",
+                                    data={
+                                        "sender": sender,
+                                        "message": f"auto-pull initiated for {default_branch} in {os.path.basename(main_repo)}/",
+                                        "channel": "general",
+                                        "project": project,
+                                    },
+                                    fail_silent=True,
+                                )
+                                subprocess.Popen(
                                     ["git", "pull", "origin", default_branch],
                                     cwd=main_repo,
-                                    capture_output=True,
-                                    timeout=30,
+                                    stdout=subprocess.DEVNULL,
+                                    stderr=subprocess.DEVNULL,
                                 )
-                                if pull_result.returncode == 0:
-                                    api_call(
-                                        "POST",
-                                        "/api/comms/messages",
-                                        data={
-                                            "sender": sender,
-                                            "message": f"auto-pulled {default_branch} in {os.path.basename(main_repo)}/",
-                                            "channel": "general",
-                                            "project": project,
-                                        },
-                                        fail_silent=True,
-                                    )
-                                else:
-                                    err_msg = pull_result.stderr.decode().strip()[:200] if pull_result.stderr else "unknown error"
-                                    print(f"[comms] auto-pull failed (rc={pull_result.returncode}): {err_msg}", file=sys.stderr)
             except (subprocess.TimeoutExpired, OSError) as e:
                 print(f"[comms] auto-pull failed: {e}", file=sys.stderr)
 
