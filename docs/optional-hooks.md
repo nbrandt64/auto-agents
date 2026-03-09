@@ -209,7 +209,7 @@ Multiple hooks of the same type run in order. Put the comms `check` hook first s
         "hooks": [
           {
             "type": "command",
-            "command": "bash ~/.claude/scripts/comms.sh check"
+            "command": "python3 ~/.claude/scripts/auto-agents.py hook check"
           }
         ]
       },

@@ -8,7 +8,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ~/.claude/scripts/comms.sh session-start"
+            "command": "python3 ~/.claude/scripts/auto-agents.py hook session-start"
           }
         ]
       }
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ~/.claude/scripts/comms.sh session-end"
+            "command": "python3 ~/.claude/scripts/auto-agents.py hook session-end"
           }
         ]
       }
@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ~/.claude/scripts/comms.sh check"
+            "command": "python3 ~/.claude/scripts/auto-agents.py hook check"
           }
         ]
       }
@@ -39,7 +39,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ~/.claude/scripts/comms.sh git-detect"
+            "command": "python3 ~/.claude/scripts/auto-agents.py hook git-detect"
           }
         ]
       }

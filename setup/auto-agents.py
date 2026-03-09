@@ -6,14 +6,18 @@ Zero external dependencies — Python stdlib only.
 """
 
 import argparse
+import getpass
+import hmac
 import json
 import os
 import re
+import select as select_mod
 import shutil
 import subprocess
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import datetime
 from pathlib import Path
@@ -124,6 +128,13 @@ def load_config():
     secret = os.environ.get("COMMS_API_SECRET", "")
 
     if CONFIG_PATH.exists():
+        # Warn if config file has overly permissive permissions
+        try:
+            mode = CONFIG_PATH.stat().st_mode & 0o777
+            if mode & 0o077:
+                print(f"  {YELLOW}Warning: {CONFIG_PATH} has permissions {oct(mode)}. Consider: chmod 600 {CONFIG_PATH}{RESET}", file=sys.stderr)
+        except OSError:
+            pass
         for line in CONFIG_PATH.read_text().strip().splitlines():
             line = line.strip()
             if not line or line.startswith("#"):
@@ -155,7 +166,7 @@ def api_call(method, path, data=None, params=None, fail_silent=False):
     full_url = f"{url}{path}"
     if params:
         query = "&".join(
-            f"{k}={urllib.request.quote(str(v))}" for k, v in params.items() if v is not None
+            f"{k}={urllib.parse.quote(str(v))}" for k, v in params.items() if v is not None
         )
         if query:
             full_url += f"?{query}"
@@ -313,12 +324,16 @@ def interactive_menu(title, options):
         while True:
             ch = sys.stdin.read(1)
             if ch == "\x1b":  # escape sequence
-                sys.stdin.read(1)  # skip [
-                arrow = sys.stdin.read(1)
-                if arrow == "A":
-                    selected = max(0, selected - 1)
-                elif arrow == "B":
-                    selected = min(n - 1, selected + 1)
+                # Non-blocking read: check if more bytes follow (arrow key)
+                if select_mod.select([sys.stdin], [], [], 0.05)[0]:
+                    bracket = sys.stdin.read(1)
+                    if bracket == "[" and select_mod.select([sys.stdin], [], [], 0.05)[0]:
+                        arrow = sys.stdin.read(1)
+                        if arrow == "A":
+                            selected = max(0, selected - 1)
+                        elif arrow == "B":
+                            selected = min(n - 1, selected + 1)
+                # Bare Escape with no follow-up: ignore (don't block)
             elif ch in ("\r", "\n"):
                 clear_menu()
                 return selected
@@ -357,6 +372,7 @@ def cmd_help(_args=""):
     print(f"    /watch           Watch group chat (live)")
     print(f"    /chat            Interactive group chat")
     print(f"    /post            Send a message: /post Agent \"message\"")
+    print(f"    /check           Check unread messages for a session")
     print(f"    /history         Show recent messages")
     print()
     print(f"  {BOLD}Other:{RESET}")
@@ -376,6 +392,7 @@ def repl(project_name=None):
     readline.set_completer(completer)
     readline.parse_and_bind("tab: complete")
     readline.set_completer_delims(" ")
+    readline.set_history_length(1000)
 
     # Persistent history
     COMMS_DIR.mkdir(parents=True, exist_ok=True)
@@ -569,7 +586,7 @@ def cmd_status(_args=""):
 # ──────────────────────────────────────────────────────────────
 
 
-def cmd_post(args=""):
+def cmd_post(args="", project_override=None):
     """Send a message: /post SenderName message text"""
     if not args:
         print(f"  Usage: /post <sender> <message>")
@@ -583,7 +600,7 @@ def cmd_post(args=""):
 
     sender = parts[0]
     message = parts[1].strip('"').strip("'")
-    project_name = detect_current_project()[0] or "general"
+    project_name = project_override or detect_current_project()[0] or "general"
 
     result = api_call(
         "POST",
@@ -768,7 +785,7 @@ def cmd_chat(_args=""):
                     if input_buf:
                         sys.stdout.write("> " + input_buf)
                         sys.stdout.flush()
-                time.sleep(0.5)
+                time.sleep(2.0)
     except KeyboardInterrupt:
         print(f"\n  {DIM}[left chat]{RESET}")
     finally:
@@ -880,23 +897,27 @@ def hook_handler(mode):
                             )
                             default_branch = br.stdout.strip() if br.returncode == 0 else ""
                             if default_branch:
-                                subprocess.Popen(
+                                pull_result = subprocess.run(
                                     ["git", "pull", "origin", default_branch],
                                     cwd=main_repo,
-                                    stdout=subprocess.DEVNULL,
-                                    stderr=subprocess.DEVNULL,
+                                    capture_output=True,
+                                    timeout=30,
                                 )
-                                api_call(
-                                    "POST",
-                                    "/api/comms/messages",
-                                    data={
-                                        "sender": sender,
-                                        "message": f"auto-pulled {default_branch} in {os.path.basename(main_repo)}/",
-                                        "channel": "general",
-                                        "project": project,
-                                    },
-                                    fail_silent=True,
-                                )
+                                if pull_result.returncode == 0:
+                                    api_call(
+                                        "POST",
+                                        "/api/comms/messages",
+                                        data={
+                                            "sender": sender,
+                                            "message": f"auto-pulled {default_branch} in {os.path.basename(main_repo)}/",
+                                            "channel": "general",
+                                            "project": project,
+                                        },
+                                        fail_silent=True,
+                                    )
+                                else:
+                                    err_msg = pull_result.stderr.decode().strip()[:200] if pull_result.stderr else "unknown error"
+                                    print(f"[comms] auto-pull failed (rc={pull_result.returncode}): {err_msg}", file=sys.stderr)
             except (subprocess.TimeoutExpired, OSError) as e:
                 print(f"[comms] auto-pull failed: {e}", file=sys.stderr)
 
@@ -1019,6 +1040,9 @@ def cmd_install(_args=""):
 
 def _prompt_api_config():
     """Prompt for API credentials and save to config file."""
+    global _config_cache
+    _config_cache = None  # Invalidate stale cache before reconfiguring
+
     COMMS_DIR.mkdir(parents=True, exist_ok=True)
 
     url = input(f"    Comms API URL: ").strip()
@@ -1026,14 +1050,13 @@ def _prompt_api_config():
         print(f"    {YELLOW}Skipped{RESET} — set COMMS_API_URL later.")
         return
 
-    secret = input(f"    API Secret: ").strip()
+    secret = getpass.getpass(f"    API Secret: ").strip()
 
     CONFIG_PATH.write_text(f'COMMS_API_URL="{url}"\nCOMMS_API_SECRET="{secret}"\n')
     CONFIG_PATH.chmod(0o600)
     print(f"    {GREEN}[ok]{RESET} Saved to {CONFIG_PATH}")
 
-    # Reset config cache
-    global _config_cache
+    # Reset config cache so new values take effect
     _config_cache = None
 
 
@@ -1063,6 +1086,9 @@ def _prompt_agents_manual(user_prefix=""):
         if not suffix:
             print(f"    {RED}Suffix required, skipping.{RESET}")
             continue
+        if not _validate_suffix(suffix):
+            print(f"    {RED}Invalid suffix. Use only lowercase letters, numbers, and hyphens.{RESET}")
+            continue
 
         base_name = suffix.title()
         default_name = f"{user_prefix.title()}_{base_name}" if user_prefix else base_name
@@ -1085,7 +1111,7 @@ def _prompt_agents_manual(user_prefix=""):
 
 def _is_autoagents_repo(path):
     """Check if a path looks like the auto-agents framework repo itself."""
-    markers = ["setup/comms.py", "setup/comms.sh", "setup/setup-worktrees.sh", "sample-app"]
+    markers = ["setup/auto-agents.py", "setup/CLAUDE.md.template", "setup/server/server.py", "sample-app"]
     return sum(1 for m in markers if os.path.exists(os.path.join(path, m))) >= 3
 
 
@@ -1609,7 +1635,10 @@ def _write_settings_json(directory, settings):
 
 
 def _find_file(name, search_scripts_dir=False):
-    """Find a file in the setup directory, optionally installed scripts dir, or repo's setup/ dir."""
+    """Find a file in the setup directory, optionally installed scripts dir, or repo's setup/ dir.
+
+    Also searches .github/workflows/ for workflow files.
+    """
     p = Path(__file__).resolve().parent / name
     if p.exists():
         return p
@@ -1622,9 +1651,12 @@ def _find_file(name, search_scripts_dir=False):
             ["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True, timeout=5
         )
         if result.returncode == 0:
-            fallback = Path(result.stdout.strip()) / "setup" / name
-            if fallback.exists():
-                return fallback
+            repo_root = Path(result.stdout.strip())
+            # Search setup/ first, then .github/workflows/
+            for subdir in ["setup", os.path.join(".github", "workflows")]:
+                fallback = repo_root / subdir / name
+                if fallback.exists():
+                    return fallback
     except (FileNotFoundError, subprocess.TimeoutExpired):
         pass
     return None
@@ -1641,6 +1673,11 @@ def _load_template():
 # ──────────────────────────────────────────────────────────────
 
 
+def _validate_suffix(suffix):
+    """Validate agent suffix for use in branch names and directory paths."""
+    return bool(re.match(r'^[a-z0-9][a-z0-9-]*$', suffix))
+
+
 def cmd_add_agent(args=""):
     """Add an agent to the current project."""
     project_name, project = detect_current_project()
@@ -1651,6 +1688,10 @@ def cmd_add_agent(args=""):
     suffix = args.strip().lower() if args else input(f"  Agent suffix: ").strip().lower()
     if not suffix:
         print(f"  {RED}Suffix required.{RESET}")
+        return
+
+    if not _validate_suffix(suffix):
+        print(f"  {RED}Invalid suffix '{suffix}'. Use only lowercase letters, numbers, and hyphens (must start with letter/number).{RESET}")
         return
 
     if suffix in project.get("agents", {}):
@@ -1693,7 +1734,7 @@ def cmd_add_agent(args=""):
             print(f"  {RED}[error]{RESET} {err}")
             return
 
-    # Update config
+    # Update config (reload to avoid TOCTOU race with concurrent agents)
     agent_config = {"name": name, "description": description}
     if sector:
         agent_config["sector"] = sector
@@ -1702,7 +1743,10 @@ def cmd_add_agent(args=""):
         agent_config["cross_project"] = True
 
     data = load_projects()
-    data["projects"][project_name]["agents"][suffix] = agent_config
+    if project_name not in data.get("projects", {}):
+        print(f"  {RED}Project '{project_name}' no longer exists in config.{RESET}")
+        return
+    data["projects"][project_name].setdefault("agents", {})[suffix] = agent_config
     save_projects(data)
     print(f"  {GREEN}[ok]{RESET} Updated config.")
 
@@ -1790,10 +1834,14 @@ def cmd_remove_agent(args=""):
             print(f"  {YELLOW}[warning]{RESET} Could not remove worktree: {e}")
             print(f"  You may need to run: git worktree remove {worktree_dir} --force")
 
-    # Update config
+    # Update config (reload to avoid TOCTOU race with concurrent agents)
     data = load_projects()
-    del data["projects"][project_name]["agents"][suffix]
-    save_projects(data)
+    project_agents = data.get("projects", {}).get(project_name, {}).get("agents", {})
+    if suffix not in project_agents:
+        print(f"  {YELLOW}[warning]{RESET} Agent '{suffix}' already removed from config.")
+    else:
+        del data["projects"][project_name]["agents"][suffix]
+        save_projects(data)
     print(f"  {GREEN}[ok]{RESET} Updated config.")
 
     # Notify chat
@@ -1850,6 +1898,7 @@ def dispatch_subcommand():
         prog="auto-agents",
         description="auto-agents — unified CLI for multi-agent project setup and coordination",
     )
+    parser.add_argument("--version", action="version", version=f"auto-agents {VERSION}")
     sub = parser.add_subparsers(dest="command")
 
     # Hook handler
@@ -1924,7 +1973,7 @@ def dispatch_subcommand():
     elif args.command == "post":
         message = " ".join(args.message)
         project = args.project or detect_project_for_hook(os.getcwd())
-        cmd_post(f"{args.sender} {message}")
+        cmd_post(f"{args.sender} {message}", project_override=project)
     elif args.command == "history":
         parts = [str(args.n)]
         if args.project:
@@ -2018,18 +2067,19 @@ def main():
         repl(project_name)
     else:
         # Not in a project -> show setup menu
-        options = [
-            ("Check environment", "/doctor", ""),
-            ("Install auto-agents", "/install", ""),
-            ("Set up a new project", "/init", ""),
-            ("Exit", "/exit", ""),
+        menu_items = [
+            ("Check environment", "/doctor", "", cmd_doctor),
+            ("Install auto-agents", "/install", "", cmd_install),
+            ("Set up a new project", "/init", "", cmd_init),
+            ("Exit", "/exit", "", None),
         ]
+        options = [(label, shortcut, desc) for label, shortcut, desc, _ in menu_items]
 
         choice = interactive_menu("What would you like to do?", options)
-        handlers = [cmd_doctor, cmd_install, cmd_init, None]
+        handler = menu_items[choice][3] if 0 <= choice < len(menu_items) else None
 
-        if 0 <= choice < len(handlers) and handlers[choice]:
-            handlers[choice]()
+        if handler:
+            handler()
 
             # After setup action, check if we're now in a project
             project_name, project = detect_current_project()

@@ -203,7 +203,7 @@ In `.claude/settings.json` inside your project directory:
 }
 ```
 
-This file is **project-local** — anyone cloning the repo gets the hooks automatically.
+This file is generated per-machine by `auto-agents init` into each worktree's `.claude/` directory. It is typically `.gitignore`d — each developer generates their own via the init wizard.
 
 ---
 
@@ -584,6 +584,7 @@ auto-agents post -s "Web" "hello"     # Send a message
 | `/remove-agent` | Remove an agent from the current project |
 | `/status` | Show project config, agents, and worktree health |
 | `/post` | Send a message to the group chat |
+| `/check` | Check unread messages for a session |
 | `/watch` | Live-stream group chat messages |
 | `/chat` | Interactive chat mode (send and receive) |
 | `/history` | Show recent messages |
