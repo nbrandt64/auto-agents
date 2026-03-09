@@ -1376,7 +1376,10 @@ def cmd_init(_args=""):
         if use_detected != "n":
             # Auto-create agents from detected directories
             for d in detected_dirs:
-                suffix = d.lower().replace(" ", "-")
+                suffix = d.lower().replace(" ", "-").strip("-")
+                if not _validate_suffix(suffix):
+                    print(f"    {YELLOW}!{RESET} Skipping '{d}' — invalid suffix '{suffix}'")
+                    continue
                 default_name = f"{user_prefix.title()}_{suffix.title()}" if user_prefix else suffix.title()
                 agents[suffix] = {
                     "name": default_name,
@@ -1674,7 +1677,7 @@ def _load_template():
 
 def _validate_suffix(suffix):
     """Validate agent suffix for use in branch names and directory paths."""
-    return bool(re.match(r'^[a-z0-9][a-z0-9-]*$', suffix))
+    return bool(re.match(r'^[a-z0-9]([a-z0-9-]*[a-z0-9])?$', suffix))
 
 
 def cmd_add_agent(args=""):
@@ -1870,20 +1873,20 @@ def cmd_menu(_args=""):
         print(f"  Menu requires an interactive terminal.")
         return
 
-    options = [
-        ("Check environment", "/doctor", ""),
-        ("Install auto-agents", "/install", ""),
-        ("Set up a new project", "/init", ""),
-        ("Add an agent", "/add-agent", ""),
-        ("Remove an agent", "/remove-agent", ""),
-        ("Back to REPL", "", ""),
+    menu_items = [
+        ("Check environment", "/doctor", "", cmd_doctor),
+        ("Install auto-agents", "/install", "", cmd_install),
+        ("Set up a new project", "/init", "", cmd_init),
+        ("Add an agent", "/add-agent", "", cmd_add_agent),
+        ("Remove an agent", "/remove-agent", "", cmd_remove_agent),
+        ("Back to REPL", "", "", None),
     ]
 
+    options = [(label, shortcut, desc) for label, shortcut, desc, _ in menu_items]
     choice = interactive_menu("What would you like to do?", options)
-    handlers = [cmd_doctor, cmd_install, cmd_init, cmd_add_agent, cmd_remove_agent, None]
 
-    if 0 <= choice < len(handlers) and handlers[choice]:
-        handlers[choice]()
+    if 0 <= choice < len(menu_items) and menu_items[choice][3]:
+        menu_items[choice][3]()
 
 
 # ──────────────────────────────────────────────────────────────

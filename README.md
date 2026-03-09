@@ -120,7 +120,7 @@ COMMS_API_URL=https://your-api-host.com
 COMMS_API_SECRET=your-shared-secret
 ```
 
-The config file is sourced by `comms.sh` and read by `comms.py`. Environment variables override config file values.
+The config file is read by `auto-agents.py` (and the legacy `comms.sh`/`comms.py` for backward compatibility). Environment variables override config file values.
 
 | Variable | Description |
 |----------|-------------|

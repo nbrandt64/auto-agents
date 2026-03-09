@@ -124,8 +124,8 @@ INPUT=$(cat)
 FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
 
-COMMS="${COMMS_SCRIPT:-$HOME/.claude/scripts/comms.py}"
-AGENT_NAME=$(python3 "$COMMS" resolve-name "$SESSION_ID" 2>/dev/null || echo "unknown")
+AUTO_AGENTS="${AUTO_AGENTS_SCRIPT:-$HOME/.claude/scripts/auto-agents.py}"
+AGENT_NAME=$(python3 "$AUTO_AGENTS" resolve-name "$SESSION_ID" 2>/dev/null || echo "unknown")
 
 # Define sector boundaries (customize for your project)
 case "$AGENT_NAME" in

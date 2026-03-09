@@ -246,10 +246,8 @@ def check_messages(
             break
         query_kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
 
-    # Filter out messages sent by this agent (don't echo back)
-    messages = [m for m in messages if m.get("sender") != agent_name]
-
-    # Update cursor to latest message
+    # Update cursor to latest message (before filtering, so self-messages
+    # don't cause repeated re-fetches on every poll)
     if messages:
         new_cursor = messages[-1]["sk"]
         agents_table.update_item(
@@ -257,6 +255,9 @@ def check_messages(
             UpdateExpression="SET lastCursor = :c",
             ExpressionAttributeValues={":c": new_cursor},
         )
+
+    # Filter out messages sent by this agent (don't echo back)
+    messages = [m for m in messages if m.get("sender") != agent_name]
 
     # Strip internal fields
     for msg in messages:

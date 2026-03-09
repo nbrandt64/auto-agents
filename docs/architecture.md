@@ -43,7 +43,7 @@ Worktrees are created with `git worktree add` and typically follow a naming patt
 
 ### Comms System
 
-The communication layer is a Python CLI (`comms.py`) that talks to a shared web API (DynamoDB + Next.js API routes). It provides:
+The communication layer is a Python CLI (`auto-agents.py`) that talks to a shared web API (DynamoDB + FastAPI). It provides:
 
 - **Messages**: timestamped messages with sender name, channel, and project, stored in DynamoDB with time-sorted keys (ULID).
 - **Agent registration**: maps Claude Code session IDs to friendly names (Web, API, Data, etc.) via atomic name claims.
@@ -57,7 +57,7 @@ Claude Code hooks in `settings.json` drive the system automatically:
 
 - **SessionStart**: Registers the agent on the group chat and posts a join message. The agent name is derived from the working directory (e.g., `myapp-web/` becomes "Web").
 - **SessionStop**: Posts a departure message so other agents know the session ended.
-- **PreToolUse**: Before every tool invocation, runs `comms.py check` to surface any new messages. Messages addressed to the current agent (e.g., `Web: please review the auth module`) are tagged `>>> FOR YOU`.
+- **PreToolUse**: Before every tool invocation, runs `auto-agents.py hook check` to surface any new messages. Messages addressed to the current agent (e.g., `Web: please review the auth module`) are tagged `>>> FOR YOU`.
 - **PostToolUse (Bash)**: After Bash commands that involve git operations, posts a summary to the chat (e.g., "pushed feat/login to origin"). Also detects `gh pr merge` and auto-pulls the default branch in the main repo directory so it stays in sync with merged PRs.
 
 ### Copilot Review Gate
@@ -68,9 +68,9 @@ Agents are expected to poll for Copilot comments, fix them, push, and wait for r
 
 ## Data Flow
 
-1. **Agent starts**: Claude Code launches in a worktree. The SessionStart hook calls `comms.py auto-assign` to register the agent name, then `comms.py post` to announce the session.
+1. **Agent starts**: Claude Code launches in a worktree. The SessionStart hook calls `auto-agents.py hook session-start` to register the agent name and announce the session.
 
-2. **Agent works**: The agent reads files, writes code, runs tests. Before each tool use, the PreToolUse hook runs `comms.py check`. If another agent (or the user) posted a message for this agent, it appears inline and the agent can act on it.
+2. **Agent works**: The agent reads files, writes code, runs tests. Before each tool use, the PreToolUse hook runs `auto-agents.py hook check`. If another agent (or the user) posted a message for this agent, it appears inline and the agent can act on it.
 
 3. **Agent commits and pushes**: After a git push, the PostToolUse hook detects the git operation and posts to the group chat: "Web: pushed feat/user-profile to origin."
 
@@ -89,7 +89,7 @@ This means agents working on different repos don't see each other's noise. A Web
 **Cross-project agents** are the exception. Agents like the GitHub agent that coordinate across repos see messages from all projects. Their `check` output includes a `[project]` tag on each message so they know which project it came from.
 
 Project detection follows this priority:
-1. Exact match in directory-to-project mapping (configured in `comms.py` `PROJECT_DIRS`)
+1. Exact match in directory-to-project mapping (configured in `projects.json`)
 2. Prefix match (e.g., directory `taskflow-web` matches prefix `taskflow`)
 3. Falls back to `general`
 
@@ -102,7 +102,7 @@ The system uses a config file at `~/.claude/comms/config`:
 | `COMMS_API_URL` | Base URL of the comms API (e.g., `https://www.example.com`) |
 | `COMMS_API_SECRET` | Shared Bearer token for API authentication |
 
-Environment variables override config file values. Agent names and project mappings are built into `comms.py` and the server-side API.
+Environment variables override config file values. Agent names and project mappings are configured in `~/.claude/comms/projects.json` (created by `auto-agents init`).
 
 ## Memory & Checkpointing
 
@@ -119,4 +119,4 @@ Three layers of persistence reduce session ramp-up and handle crash recovery:
 - The API has a 3-second timeout on all calls. The `check` command fails silently on API errors to avoid blocking agent tool use.
 - No application secrets are stored in comms messages — only coordination messages and session metadata.
 - DynamoDB items have a 30-day TTL for automatic cleanup.
-- The `comms.sh` wrapper reads hook JSON from stdin and passes only the relevant fields to `comms.py`, avoiding injection of arbitrary data.
+- The `auto-agents.py hook` handler reads hook JSON from stdin and passes only the relevant fields to the API, avoiding injection of arbitrary data.
