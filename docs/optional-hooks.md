@@ -14,8 +14,12 @@ Agents sometimes create unnecessary documentation files (.md) or write files out
     "PreToolUse": [
       {
         "matcher": "Write",
-        "type": "command",
-        "command": "bash ~/.claude/scripts/write-validator.sh"
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/scripts/write-validator.sh"
+          }
+        ]
       }
     ]
   }
@@ -53,8 +57,12 @@ Block commits that contain leftover debug logging.
     "PreToolUse": [
       {
         "matcher": "Bash",
-        "type": "command",
-        "command": "bash ~/.claude/scripts/check-console-log.sh"
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/scripts/check-console-log.sh"
+          }
+        ]
       }
     ]
   }
@@ -94,8 +102,12 @@ If you're using sector ownership (agent Web only modifies `frontend/`, agent API
     "PreToolUse": [
       {
         "matcher": "Write|Edit",
-        "type": "command",
-        "command": "bash ~/.claude/scripts/sector-check.sh"
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/scripts/sector-check.sh"
+          }
+        ]
       }
     ]
   }
@@ -150,8 +162,12 @@ Run type checking before allowing commits (TypeScript example).
     "PreToolUse": [
       {
         "matcher": "Bash",
-        "type": "command",
-        "command": "bash ~/.claude/scripts/typecheck-on-commit.sh"
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/scripts/typecheck-on-commit.sh"
+          }
+        ]
       }
     ]
   }
@@ -190,22 +206,34 @@ Multiple hooks of the same type run in order. Put the comms `check` hook first s
   "hooks": {
     "PreToolUse": [
       {
-        "type": "command",
-        "command": "bash ~/.claude/scripts/comms.sh check"
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/scripts/auto-agents.py hook check"
+          }
+        ]
       },
       {
         "matcher": "Write|Edit",
-        "type": "command",
-        "command": "bash ~/.claude/scripts/sector-check.sh"
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/scripts/sector-check.sh"
+          }
+        ]
       },
       {
         "matcher": "Write",
-        "type": "command",
-        "command": "bash ~/.claude/scripts/write-validator.sh"
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/scripts/write-validator.sh"
+          }
+        ]
       }
     ]
   }
 }
 ```
 
-Hooks with a `matcher` only run for matching tool names. Hooks without a matcher run for every tool use.
+Matcher groups with a `matcher` only run for matching tool names. Groups without a matcher run for every tool use.

@@ -1,15 +1,10 @@
-# CLAUDE.md — [PROJECT_NAME]
+# CLAUDE.md — {{PROJECT_NAME}}
 
 ## Agent Sector Ownership
 
 Each agent owns specific directories. Only modify files in YOUR sector.
 
-| Sector | Directory | Agent | Responsibility |
-|--------|-----------|-------|----------------|
-| Frontend | `frontend/` | Web | React components, styling, API client |
-| API | `api/` | API | Express routes, middleware, validation |
-| Data | `data/` | Data | Database schema, migrations, queries |
-| Shared | `shared/` | Any | Types only — coordinate before changing |
+{{SECTOR_TABLE}}
 
 **Rules:**
 - NEVER modify files outside your sector without asking in group chat first
@@ -18,7 +13,7 @@ Each agent owns specific directories. Only modify files in YOUR sector.
 
 ## Agent Identity
 
-You are the **[AGENT_NAME]** agent. Your sector is `[SECTOR_DIR]/`.
+You are the **{{AGENT_NAME}}** agent. Your sector is `{{SECTOR_DIR}}`.
 
 ## Git Workflow
 
@@ -26,11 +21,11 @@ You are in a persistent worktree. Your workflow:
 
 1. Create a feature branch: `git checkout -b feat/description`
 2. Make changes, commit, push
-3. Create PR: `gh pr create --base [DEFAULT_BRANCH] --title "..." --body "..."`
-4. Return to parking branch: `git checkout agent/[AGENT_SUFFIX]`
-5. Pull latest: `git pull origin [DEFAULT_BRANCH]`
+3. Create PR: `gh pr create --base {{DEFAULT_BRANCH}} --title "..." --body "..."`
+4. Return to parking branch: `git checkout agent/{{AGENT_SUFFIX}}`
+5. Pull latest: `git pull origin {{DEFAULT_BRANCH}}`
 
-**Never push directly to [DEFAULT_BRANCH].**
+**Never push directly to {{DEFAULT_BRANCH}}.**
 
 ## Copilot Review Gate — MANDATORY
 
@@ -39,7 +34,24 @@ NEVER use `--admin` to bypass branch protection.
 NEVER manually set the Copilot Review Gate status via `gh api statuses`.
 
 The review gate workflow checks for unresolved threads via GraphQL — not just comment count.
-If the gate is stuck PENDING, push an empty commit to re-trigger; do NOT set the status manually.
+If the gate is stuck PENDING, use `gh run rerun` to re-trigger the workflow; do NOT push empty commits or set the status manually.
+
+## Stale Branch Cleanup (Daily)
+
+Once per day, clean up stale local branches that have been merged or deleted on remote:
+
+```bash
+# Prune remote-tracking branches that no longer exist
+git fetch --prune
+
+# Delete local branches whose upstream is gone
+git branch -vv | grep ': gone]' | awk '{print $1}' | xargs -r git branch -D
+
+# Delete local branches already merged into the default branch
+git branch --merged {{DEFAULT_BRANCH}} | grep -v '^\*\|{{DEFAULT_BRANCH}}\|agent/' | xargs -r git branch -d
+```
+
+**Do NOT delete `agent/*` parking branches** — those are persistent worktree branches.
 
 ## Group Chat (Comms)
 
@@ -52,7 +64,7 @@ Messages appear automatically before each tool use via hooks.
 
 ### Sending Messages
 ```bash
-python3 ~/.claude/scripts/comms.py post -s "[AGENT_NAME]" "your message"
+auto-agents post -s "{{AGENT_NAME}}" "your message"
 ```
 
 ### When to Post

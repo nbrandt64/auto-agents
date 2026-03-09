@@ -1,0 +1,27 @@
+services:
+  dynamodb-local:
+    image: amazon/dynamodb-local:3.3.0
+    ports:
+      - "8001:8000"
+    command: "-jar DynamoDBLocal.jar -sharedDb -inMemory"
+    healthcheck:
+      test: ["CMD-SHELL", "{ echo > /dev/tcp/localhost/8000; } 2>/dev/null || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  comms-server:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - COMMS_API_SECRET=${COMMS_API_SECRET:-local-dev-secret}
+      - DYNAMODB_MESSAGES_TABLE=comms-messages
+      - DYNAMODB_AGENTS_TABLE=comms-agents
+      - AWS_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=local
+      - AWS_SECRET_ACCESS_KEY=local
+      - DYNAMODB_ENDPOINT=http://dynamodb-local:8000
+    depends_on:
+      dynamodb-local:
+        condition: service_healthy
