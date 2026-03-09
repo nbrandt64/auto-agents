@@ -34,14 +34,12 @@ jobs:
           REPO_NAME="${{ github.event.repository.name }}"
 
           # Determine PR number from event context
+          # Note: pull_request_review and pull_request_review_thread events
+          # both include pull_request at the top level, so check #2 handles them.
           if [ -n "${{ github.event.inputs.pr_number }}" ]; then
             PR_NUMBER="${{ github.event.inputs.pr_number }}"
           elif [ -n "${{ github.event.pull_request.number }}" ]; then
             PR_NUMBER="${{ github.event.pull_request.number }}"
-          elif [ -n "${{ github.event.review.pull_request.number }}" ]; then
-            PR_NUMBER="${{ github.event.review.pull_request.number }}"
-          elif [ -n "${{ github.event.thread.pull_request.number }}" ]; then
-            PR_NUMBER="${{ github.event.thread.pull_request.number }}"
           else
             echo "::error::Could not determine PR number from event"
             exit 1
