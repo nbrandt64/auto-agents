@@ -52,7 +52,7 @@ The key ideas:
 
 **Worktrees, not branches.** Each agent gets its own directory -- a full copy of the repo via `git worktree`. No checkout conflicts because no one shares a working directory. Agent Web works in `taskflow-web/`, Agent API works in `taskflow-api/`. They can both be on different branches at the same time.
 
-**A shared API, not local files.** The group chat is backed by a web API (DynamoDB + Next.js routes) that works across multiple machines. Agents write messages with `comms.py post`, and a `PreToolUse` hook checks for new messages before every tool call. The API uses Bearer token auth and time-sorted keys for consistent ordering.
+**A shared API, not local files.** The group chat is backed by a web API (DynamoDB + FastAPI) that works across multiple machines. Agents write messages with `auto-agents post`, and a `PreToolUse` hook checks for new messages before every tool call. The API uses Bearer token auth and time-sorted keys for consistent ordering.
 
 **Hooks, not code.** Agents don't need special code to participate in the chat. Claude Code hooks handle everything -- auto-registering on session start, checking for messages, detecting git operations, announcing session end. The agent just sees messages appear in context.
 
@@ -112,29 +112,29 @@ Sector ownership also makes PRs cleaner. Each PR only touches one sector's files
 
 ### 3. Group Chat
 
-The group chat is where coordination happens. It's a Python CLI (`setup/comms.py`) that talks to a shared web API and supports several modes:
+The group chat is where coordination happens. It's built into the `auto-agents` CLI (`setup/auto-agents.py`) which talks to a shared web API and supports several modes:
 
 **Posting a message:**
 ```bash
-python3 comms.py post -s "Web" "Finished TaskList component, PR #4 ready"
+auto-agents post -s "Web" "Finished TaskList component, PR #4 ready"
 ```
 
 **Watching the chat in real time:**
 ```bash
-python3 comms.py watch
+auto-agents watch
 ```
 
 **Interactive chat mode (for humans):**
 ```bash
-python3 comms.py chat
+auto-agents chat
 ```
 
 **Checking for new messages (called by hooks):**
 ```bash
-python3 comms.py check <session_id>
+auto-agents check <session_id>
 ```
 
-The auto-naming system maps directories to agent names. If your session is running in `taskflow-web/`, you're automatically named "Web." The directory-to-name mapping is built into `comms.py` and the server-side API.
+The auto-naming system maps directories to agent names. If your session is running in `taskflow-web/`, you're automatically named "Web." The directory-to-name mapping is configured in `projects.json` and resolved by the CLI and server-side API.
 
 Messages are scoped by **project**. Each agent is automatically associated with a project based on its working directory, and `check` only surfaces messages from the same project (plus `general` broadcasts from the human). This keeps things clean when you're running agents across multiple repos -- a GitHub agent coordinating three projects doesn't flood the frontend agent with irrelevant chatter. Cross-project agents (like the GitHub agent) automatically see messages from all projects.
 
@@ -142,7 +142,7 @@ The `check` command is the magic. It's called before every tool use via a `PreTo
 
 This means agents don't poll or wait. They just work, and between tool calls, they naturally see any new messages. If another agent needs something from them, the message appears in context and they can respond.
 
-The human joins by running `python3 comms.py chat` in any terminal. You see the same messages the agents see, and you can post messages that agents will pick up on their next tool call. You can direct messages to specific agents ("API: add rate limiting to the tasks endpoint") or broadcast to everyone ("All: switching to PostgreSQL, update your connection strings").
+The human joins by running `auto-agents chat` in any terminal. You see the same messages the agents see, and you can post messages that agents will pick up on their next tool call. You can direct messages to specific agents ("API: add rate limiting to the tasks endpoint") or broadcast to everyone ("All: switching to PostgreSQL, update your connection strings").
 
 ### 4. Hooks as Nervous System
 
@@ -159,7 +159,7 @@ Claude Code hooks are the glue. They turn the comms system from something agents
         "hooks": [
           {
             "type": "command",
-            "command": "bash ~/.claude/scripts/comms.sh session-start"
+            "command": "python3 ~/.claude/scripts/auto-agents.py hook session-start"
           }
         ]
       }
@@ -169,7 +169,7 @@ Claude Code hooks are the glue. They turn the comms system from something agents
         "hooks": [
           {
             "type": "command",
-            "command": "bash ~/.claude/scripts/comms.sh session-end"
+            "command": "python3 ~/.claude/scripts/auto-agents.py hook session-end"
           }
         ]
       }
@@ -179,7 +179,7 @@ Claude Code hooks are the glue. They turn the comms system from something agents
         "hooks": [
           {
             "type": "command",
-            "command": "bash ~/.claude/scripts/comms.sh check"
+            "command": "python3 ~/.claude/scripts/auto-agents.py hook check"
           }
         ]
       }
@@ -190,7 +190,7 @@ Claude Code hooks are the glue. They turn the comms system from something agents
         "hooks": [
           {
             "type": "command",
-            "command": "bash ~/.claude/scripts/comms.sh git-detect"
+            "command": "python3 ~/.claude/scripts/auto-agents.py hook git-detect"
           }
         ]
       }
@@ -205,13 +205,13 @@ Four hooks, four behaviors:
 
 **SessionStart** -- When an agent starts, the hook reads the working directory, auto-assigns a name based on the directory suffix, and posts "Session started in taskflow-web" to the chat. Every other agent sees this on their next tool call.
 
-**PreToolUse** -- Before every single tool call, the hook runs `comms.py check`. If there are new messages, they're injected into the agent's context. The agent sees them naturally, as if someone spoke to them. Directed messages get the `>>> FOR YOU` tag.
+**PreToolUse** -- Before every single tool call, the hook runs `auto-agents.py hook check`. If there are new messages, they're injected into the agent's context. The agent sees them naturally, as if someone spoke to them. Directed messages get the `>>> FOR YOU` tag.
 
 **PostToolUse (Bash only)** -- After any Bash command, the hook checks if it was a git operation (checkout, push, pull, merge, etc.). If so, it posts to the chat: "git: push origin feat/add-tasks". Other agents know when branches are changing. It also detects `gh pr merge` commands and automatically pulls the default branch in the main repo directory, so Xcode (or whatever builds from the main repo) always has the latest merged code. No more "rebuild didn't pick up changes" surprises.
 
 **Stop** -- When a session ends, the hook posts "Session ended." Other agents know that agent is no longer active.
 
-The wrapper script (`setup/comms.sh`) handles the plumbing -- reading the JSON that Claude Code passes to hooks via stdin, extracting the session ID and working directory, and calling the right `comms.py` subcommand. Agents don't need any awareness of this machinery. They just work, and the hooks handle communication transparently.
+The built-in hook handler (`auto-agents.py hook <mode>`) handles the plumbing -- reading the JSON that Claude Code passes to hooks via stdin, extracting the session ID and working directory, and dispatching the right action. Agents don't need any awareness of this machinery. They just work, and the hooks handle communication transparently.
 
 ### 5. Skills as Reusable Workflows
 

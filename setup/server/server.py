@@ -5,6 +5,8 @@ Single-file server implementing the comms API contract used by auto-agents.py.
 Run with: uvicorn server:app --host 0.0.0.0 --port 8000
 """
 
+import hmac
+import logging
 import os
 import time
 from datetime import datetime, timezone
@@ -13,7 +15,7 @@ from typing import Optional
 import boto3
 from boto3.dynamodb.conditions import Key
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from ulid import ULID
 
 # ──────────────────────────────────────────────────────────────
@@ -21,6 +23,17 @@ from ulid import ULID
 # ──────────────────────────────────────────────────────────────
 
 COMMS_API_SECRET = os.environ.get("COMMS_API_SECRET", "")
+ALLOW_NO_AUTH = os.environ.get("ALLOW_NO_AUTH", "").lower() == "true"
+
+logger = logging.getLogger("comms-server")
+
+if not COMMS_API_SECRET and not ALLOW_NO_AUTH:
+    raise RuntimeError(
+        "COMMS_API_SECRET is not set. Refusing to start without authentication. "
+        "Set COMMS_API_SECRET or set ALLOW_NO_AUTH=true to run without auth."
+    )
+if not COMMS_API_SECRET:
+    logger.warning("WARNING: Running without authentication (ALLOW_NO_AUTH=true). Do not use in production.")
 MESSAGES_TABLE = os.environ.get("DYNAMODB_MESSAGES_TABLE", "comms-messages")
 AGENTS_TABLE = os.environ.get("DYNAMODB_AGENTS_TABLE", "comms-agents")
 AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
@@ -48,6 +61,12 @@ agents_table = dynamodb.Table(AGENTS_TABLE)
 app = FastAPI(title="Comms API", version="1.0")
 
 
+@app.get("/health")
+def health():
+    """Health check endpoint (no auth required)."""
+    return {"status": "ok"}
+
+
 # ──────────────────────────────────────────────────────────────
 # Auth
 # ──────────────────────────────────────────────────────────────
@@ -60,7 +79,7 @@ def verify_auth(authorization: Optional[str] = Header(None)):
     if not authorization:
         raise HTTPException(status_code=401, detail="Missing Authorization header")
     scheme, _, token = authorization.partition(" ")
-    if scheme.lower() != "bearer" or token != COMMS_API_SECRET:
+    if scheme.lower() != "bearer" or not hmac.compare_digest(token, COMMS_API_SECRET):
         raise HTTPException(status_code=401, detail="Invalid token")
 
 
@@ -70,17 +89,17 @@ def verify_auth(authorization: Optional[str] = Header(None)):
 
 
 class PostMessageRequest(BaseModel):
-    sender: str
-    message: str
-    channel: str = "general"
-    project: str = "general"
+    sender: str = Field(..., max_length=100)
+    message: str = Field(..., max_length=10000)
+    channel: str = Field("general", max_length=100)
+    project: str = Field("general", max_length=100)
 
 
 class RegisterAgentRequest(BaseModel):
-    session_id: str
-    cwd: str = ""
-    name: Optional[str] = None
-    project: Optional[str] = None
+    session_id: str = Field(..., max_length=200)
+    cwd: str = Field("", max_length=1000)
+    name: Optional[str] = Field(None, max_length=100)
+    project: Optional[str] = Field(None, max_length=100)
 
 
 # ──────────────────────────────────────────────────────────────
@@ -204,27 +223,28 @@ def check_messages(
 
     # Determine if cross-project (name-based heuristic not needed server-side;
     # just return messages for the agent's project, or all if project is "general")
+    # Paginate to ensure no messages are dropped when >100 are pending
+    messages = []
+    query_kwargs = {"ScanIndexForward": True, "Limit": 100}
+
     if agent_project and agent_project != "general":
         key_cond = Key("project").eq(agent_project)
         if last_cursor:
             key_cond = key_cond & Key("sk").gt(last_cursor)
-        resp = messages_table.query(
-            IndexName="project-index",
-            KeyConditionExpression=key_cond,
-            ScanIndexForward=True,
-            Limit=100,
-        )
+        query_kwargs["IndexName"] = "project-index"
+        query_kwargs["KeyConditionExpression"] = key_cond
     else:
         key_cond = Key("channel").eq("general")
         if last_cursor:
             key_cond = key_cond & Key("sk").gt(last_cursor)
-        resp = messages_table.query(
-            KeyConditionExpression=key_cond,
-            ScanIndexForward=True,
-            Limit=100,
-        )
+        query_kwargs["KeyConditionExpression"] = key_cond
 
-    messages = resp.get("Items", [])
+    while True:
+        resp = messages_table.query(**query_kwargs)
+        messages.extend(resp.get("Items", []))
+        if "LastEvaluatedKey" not in resp:
+            break
+        query_kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
 
     # Filter out messages sent by this agent (don't echo back)
     messages = [m for m in messages if m.get("sender") != agent_name]
@@ -308,9 +328,15 @@ def get_agents(
         item.pop("lastCursor", None)
         return {"agent": item}
 
-    # Scan all agents
-    resp = agents_table.scan()
-    agents = resp.get("Items", [])
+    # Scan all agents (paginate through all results)
+    agents = []
+    scan_kwargs = {}
+    while True:
+        resp = agents_table.scan(**scan_kwargs)
+        agents.extend(resp.get("Items", []))
+        if "LastEvaluatedKey" not in resp:
+            break
+        scan_kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
     for a in agents:
         a.pop("ttl", None)
         a.pop("lastCursor", None)

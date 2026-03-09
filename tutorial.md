@@ -17,15 +17,19 @@ git clone https://github.com/nbrandt64/auto-agents.git
 cd auto-agents
 ```
 
-## Step 2: Install the comms scripts
+## Step 2: Install the CLI
 
-Copy the comms system into your Claude Code config directory:
+Install the auto-agents CLI into your Claude Code config directory:
+
+```bash
+python3 setup/auto-agents.py install
+```
+
+Or manually:
 
 ```bash
 mkdir -p ~/.claude/scripts ~/.claude/comms
-cp setup/comms.py ~/.claude/scripts/comms.py
-cp setup/comms.sh ~/.claude/scripts/comms.sh
-chmod +x ~/.claude/scripts/comms.sh
+cp setup/auto-agents.py ~/.claude/scripts/auto-agents.py
 ```
 
 ## Step 3: Configure the comms backend
@@ -59,16 +63,16 @@ The hooks config should look like this:
   },
   "hooks": {
     "SessionStart": [
-      { "hooks": [{ "type": "command", "command": "bash ~/.claude/scripts/comms.sh session-start" }] }
+      { "hooks": [{ "type": "command", "command": "python3 ~/.claude/scripts/auto-agents.py hook session-start" }] }
     ],
     "Stop": [
-      { "hooks": [{ "type": "command", "command": "bash ~/.claude/scripts/comms.sh session-end" }] }
+      { "hooks": [{ "type": "command", "command": "python3 ~/.claude/scripts/auto-agents.py hook session-end" }] }
     ],
     "PreToolUse": [
-      { "hooks": [{ "type": "command", "command": "bash ~/.claude/scripts/comms.sh check" }] }
+      { "hooks": [{ "type": "command", "command": "python3 ~/.claude/scripts/auto-agents.py hook check" }] }
     ],
     "PostToolUse": [
-      { "matcher": "Bash", "hooks": [{ "type": "command", "command": "bash ~/.claude/scripts/comms.sh git-detect" }] }
+      { "matcher": "Bash", "hooks": [{ "type": "command", "command": "python3 ~/.claude/scripts/auto-agents.py hook git-detect" }] }
     ]
   }
 }
@@ -161,13 +165,13 @@ cd /path/to/taskflow-github && claude
 Open a fifth terminal tab:
 
 ```bash
-python3 ~/.claude/scripts/comms.py watch
+auto-agents watch
 ```
 
 You'll see session start messages as each agent comes online. You can also join interactively:
 
 ```bash
-python3 ~/.claude/scripts/comms.py chat
+auto-agents chat
 ```
 
 ## Step 13: Give them work
