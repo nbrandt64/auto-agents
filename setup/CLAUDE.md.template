@@ -53,6 +53,23 @@ git branch --merged {{DEFAULT_BRANCH}} | grep -v '^\*\|{{DEFAULT_BRANCH}}\|agent
 
 **Do NOT delete `agent/*` parking branches** — those are persistent worktree branches.
 
+## Stale Branch Cleanup (Daily)
+
+Once per day, clean up stale local branches that have been merged or deleted on remote:
+
+```bash
+# Prune remote-tracking branches that no longer exist
+git fetch --prune
+
+# Delete local branches whose upstream is gone
+git branch -vv | grep ': gone]' | awk '{print $1}' | xargs -r git branch -D
+
+# Delete local branches already merged into the default branch
+git branch --merged {{DEFAULT_BRANCH}} | grep -v '^\*\|{{DEFAULT_BRANCH}}\|agent/' | xargs -r git branch -d
+```
+
+**Do NOT delete `agent/*` parking branches** — those are persistent worktree branches.
+
 ## Group Chat (Comms)
 
 You are on a group chat with other agents and the human.

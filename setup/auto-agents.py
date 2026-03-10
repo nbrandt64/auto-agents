@@ -1042,6 +1042,7 @@ def _prompt_api_config():
     global _config_cache
     _config_cache = None  # Invalidate stale cache before reconfiguring
 
+
     COMMS_DIR.mkdir(parents=True, exist_ok=True)
 
     url = input(f"    Comms API URL: ").strip()
@@ -1677,6 +1678,7 @@ def _validate_suffix(suffix):
     return bool(re.match(r'^[a-z0-9][a-z0-9-]*$', suffix))
 
 
+
 def cmd_add_agent(args=""):
     """Add an agent to the current project."""
     project_name, project = detect_current_project()
@@ -1692,6 +1694,7 @@ def cmd_add_agent(args=""):
     if not _validate_suffix(suffix):
         print(f"  {RED}Invalid suffix '{suffix}'. Use only lowercase letters, numbers, and hyphens (must start with letter/number).{RESET}")
         return
+
 
     if suffix in project.get("agents", {}):
         print(f"  {RED}Agent '{suffix}' already exists.{RESET}")
@@ -1891,6 +1894,101 @@ def cmd_menu(_args=""):
 # ──────────────────────────────────────────────────────────────
 
 
+def _open_terminal_tab(cmd):
+    """Open a new Terminal tab and run a command (macOS only)."""
+    script = (
+        'tell application "System Events"\n'
+        '  tell process "Terminal"\n'
+        '    keystroke "t" using command down\n'
+        "  end tell\n"
+        "end tell\n"
+        "delay 0.5\n"
+        'tell application "Terminal"\n'
+        f'  do script "{cmd}" in front window\n'
+        "end tell"
+    )
+    subprocess.run(["osascript", "-e", script], capture_output=True)
+
+
+def cmd_start(args=""):
+    """Launch all agents for the current project in Terminal tabs (macOS only).
+
+    Usage: /start [--skip-permissions] [--begin-work]
+    """
+    if sys.platform != "darwin":
+        print(f"  {RED}[error]{RESET} /start requires macOS (uses AppleScript to open Terminal tabs).")
+        return
+
+    parts = args.split() if isinstance(args, str) else []
+    skip_perms = "--skip-permissions" in parts
+    begin_work = "--begin-work" in parts
+
+    project_name, project = detect_current_project()
+    if not project:
+        print(f"  {RED}[error]{RESET} Not in a configured project. Run from a project directory.")
+        return
+
+    agents = project.get("agents", {})
+    if not agents:
+        print(f"  {RED}[error]{RESET} No agents configured for project '{project_name}'.")
+        return
+
+    repo_dir = project.get("path", "")
+    parent_dir = os.path.dirname(repo_dir)
+    repo_name = os.path.basename(repo_dir)
+
+    worktree_dirs = []
+    for suffix in agents:
+        wt_dir = os.path.join(parent_dir, f"{repo_name}-{suffix}")
+        if os.path.isdir(wt_dir):
+            worktree_dirs.append(wt_dir)
+        else:
+            print(f"  {YELLOW}[warn]{RESET} Worktree not found, skipping: {os.path.basename(wt_dir)}/")
+
+    if not worktree_dirs:
+        print(f"  {RED}[error]{RESET} No agent worktrees found. Run 'auto-agents init' first.")
+        return
+
+    if sys.stdin.isatty():
+        if not skip_perms:
+            resp = input("  Skip permissions prompts? (--dangerously-skip-permissions) [y/N] ").strip().lower()
+            skip_perms = resp in ("y", "yes")
+        if not begin_work:
+            resp = input("  Run /begin-work automatically on startup? [y/N] ").strip().lower()
+            begin_work = resp in ("y", "yes")
+
+    claude_parts = ["claude"]
+    if skip_perms:
+        claude_parts.append("--dangerously-skip-permissions")
+    if begin_work:
+        claude_parts.append("'/begin-work'")
+    claude_cmd = " ".join(claude_parts)
+
+    print()
+    print(f"  {BOLD}Launching {len(worktree_dirs)} agent(s) + watch/chat tabs...{RESET}")
+
+    first_dir = worktree_dirs[0]
+    script = (
+        'tell application "Terminal"\n'
+        "  activate\n"
+        f"  do script \"cd '{first_dir}' && {claude_cmd}\"\n"
+        "end tell"
+    )
+    subprocess.run(["osascript", "-e", script], capture_output=True)
+    time.sleep(1)
+
+    for wt_dir in worktree_dirs[1:]:
+        _open_terminal_tab(f"cd '{wt_dir}' && {claude_cmd}")
+
+    _open_terminal_tab("auto-agents watch")
+    _open_terminal_tab("auto-agents chat")
+
+    print(f"  {GREEN}[ok]{RESET} Launched {len(worktree_dirs)} agent(s), watch, and chat tabs.")
+    print(f"  {DIM}Project: {project_name}{RESET}")
+    print()
+
+
+
 def dispatch_subcommand():
     """Handle non-interactive CLI usage via argparse."""
     parser = argparse.ArgumentParser(
@@ -1915,6 +2013,11 @@ def dispatch_subcommand():
 
     p_rm = sub.add_parser("remove-agent", help="Remove an agent")
     p_rm.add_argument("suffix", nargs="?", default="")
+
+    p_start = sub.add_parser("start", help="Launch all agents in Terminal tabs (macOS)")
+    p_start.add_argument("--skip-permissions", action="store_true", help="Pass --dangerously-skip-permissions to claude")
+    p_start.add_argument("--begin-work", action="store_true", help="Run /begin-work automatically on startup")
+
 
     # Comms commands (backward-compatible with comms.py interface)
     p_post = sub.add_parser("post", help="Post a message")
@@ -1969,6 +2072,13 @@ def dispatch_subcommand():
         cmd_add_agent(args.suffix)
     elif args.command == "remove-agent":
         cmd_remove_agent(args.suffix)
+    elif args.command == "start":
+        flags = []
+        if args.skip_permissions:
+            flags.append("--skip-permissions")
+        if args.begin_work:
+            flags.append("--begin-work")
+        cmd_start(" ".join(flags))
     elif args.command == "post":
         message = " ".join(args.message)
         project = args.project or detect_project_for_hook(os.getcwd())
@@ -2030,6 +2140,7 @@ COMMANDS.update(
         "/init": cmd_init,
         "/add-agent": cmd_add_agent,
         "/remove-agent": cmd_remove_agent,
+        "/start": cmd_start,
         "/status": cmd_status,
         "/post": cmd_post,
         "/check": cmd_check,

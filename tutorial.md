@@ -80,7 +80,7 @@ The hooks config should look like this:
 
 ## Step 5: Install skills
 
-Copy the example skills so all agents have access to `/tdd`, `/review`, `/pr-process`, and `/copilot-loop`:
+Copy the example skills so all agents have access to `/begin-work`, `/tdd`, `/review`, `/pr-process`, and `/copilot-loop`:
 
 ```bash
 cp -r /path/to/auto-agents/setup/skills/* ~/.claude/skills/
@@ -144,7 +144,28 @@ Edit the CLAUDE.md template to fill in your project name, default branch, and ag
 
 ## Step 11: Launch the agents
 
-Open four terminal tabs:
+On macOS, use `auto-agents start` to open all agents and the group chat in one command:
+
+```bash
+auto-agents start
+```
+
+It asks two questions before opening any tabs:
+
+```
+  Skip permissions prompts? (--dangerously-skip-permissions) [y/N]
+  Run /begin-work automatically on startup? [y/N]
+```
+
+Or pass flags to skip the prompts:
+
+```bash
+auto-agents start --skip-permissions --begin-work
+```
+
+Then it opens Terminal tabs for each agent plus a watch tab and an interactive chat tab. If you opted into `--begin-work`, each agent immediately runs the orientation sequence — reading their CLAUDE.md, checking shared decisions and any crash-recovery checkpoint, and polling the group chat — before beginning work.
+
+Or launch manually:
 
 ```bash
 # Tab 1
@@ -176,7 +197,9 @@ auto-agents chat
 
 ## Step 13: Give them work
 
-In each agent's terminal, give them their first task. For the sample TaskFlow app:
+If you chose to run `/begin-work` at startup, agents will have already oriented themselves by now. Otherwise, you can tell each agent to run `/begin-work` manually, or just give them their first task directly.
+
+To assign initial work, post tasks via the group chat or tell each agent directly in its terminal. For the sample TaskFlow app:
 
 - **Web**: "Build a React component that displays a list of tasks from the API"
 - **API**: "Create Express routes for CRUD operations on tasks"

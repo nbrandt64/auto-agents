@@ -101,11 +101,25 @@ auto-agents> /doctor        # Check environment prerequisites
    cp -r setup/skills/* ~/.claude/skills/
    ```
 
+   This gives all agents access to `/begin-work`, `/tdd`, `/review`, `/pr-process`, and `/copilot-loop` slash commands. Customize repo names in the PR skills to match your setup.
+
 7. **Add a CLAUDE.md to each worktree** from `setup/CLAUDE.md.template`
 
-8. **Launch agents** — run `claude` in each worktree directory
+8. **Launch agents**
 
-9. **(Optional) Add the Copilot review gate** — copy `setup/require-copilot-review.yml` to `.github/workflows/`
+   Open a separate terminal for each worktree and run `claude` in each one, or use `auto-agents start` on macOS to open all tabs at once:
+
+   ```bash
+   auto-agents start                        # interactive prompts
+   auto-agents start --skip-permissions     # skip dangerously-skip-permissions prompt
+   auto-agents start --begin-work           # auto-run /begin-work on startup
+   ```
+
+   Agents will auto-register on the group chat and begin coordinating.
+
+9. **(Optional) Add the Copilot review gate**
+
+   Copy `setup/require-copilot-review.yml` into your repo's `.github/workflows/` directory.
 
 </details>
 
@@ -190,6 +204,7 @@ auto-agents/
 │   ├── comms.sh               # Hook wrapper script (legacy, still works)
 │   ├── settings.json.example  # Claude Code hook + env config
 │   ├── setup-worktrees.sh     # Worktree creation script (legacy)
+│   ├── start-agents.sh        # Launch all agents in Terminal tabs — legacy, use 'auto-agents start'
 │   ├── CLAUDE.md.template     # Per-agent instructions template
 │   ├── require-copilot-review.yml  # GitHub Actions workflow
 │   ├── server/                # Self-hosted comms API server
@@ -198,6 +213,7 @@ auto-agents/
 │   │   ├── requirements.txt   # Python dependencies
 │   │   └── README.md          # Server setup guide
 │   └── skills/                # Reusable slash command workflows
+│       ├── begin-work/SKILL.md    # /begin-work — session startup orientation
 │       ├── tdd/SKILL.md       # /tdd — test-driven development cycle
 │       ├── review/SKILL.md    # /review — code review checklist
 │       ├── pr-process/SKILL.md    # /pr-process — batch PR processing
@@ -236,6 +252,7 @@ The `auto-agents` CLI works in three modes:
 
 | Command | Description |
 |---------|-------------|
+| `/start` | Launch all agents in Terminal tabs (macOS) |
 | `/status` | Show project info, agents, and worktree status |
 | `/post <sender> <message>` | Send a message to the group chat |
 | `/check <session_id>` | Check unread messages for a session |

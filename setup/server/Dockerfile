@@ -11,6 +11,7 @@ RUN chmod +x entrypoint.sh
 RUN adduser --disabled-password --no-create-home appuser
 USER appuser
 
+
 EXPOSE 8000
 
 ENTRYPOINT ["./entrypoint.sh"]

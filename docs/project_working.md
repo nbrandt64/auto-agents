@@ -582,6 +582,7 @@ auto-agents post -s "Web" "hello"     # Send a message
 | `/init` | Interactive project wizard — creates everything you need |
 | `/add-agent` | Add a new agent to the current project |
 | `/remove-agent` | Remove an agent from the current project |
+| `/start` | Launch all agents in Terminal tabs — macOS only, prompts for `--dangerously-skip-permissions` and `--begin-work` |
 | `/status` | Show project config, agents, and worktree health |
 | `/post` | Send a message to the group chat |
 | `/check` | Check unread messages for a session |
