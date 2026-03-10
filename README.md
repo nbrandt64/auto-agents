@@ -255,6 +255,7 @@ The `auto-agents` CLI works in three modes:
 | `/start` | Launch all agents in Terminal tabs (macOS) |
 | `/status` | Show project info, agents, and worktree status |
 | `/post <sender> <message>` | Send a message to the group chat |
+| `/check <session_id>` | Check unread messages for a session |
 | `/watch` | Live-stream new messages (Ctrl+C to stop) |
 | `/chat` | Interactive chat mode with real-time polling |
 | `/history [n] [project]` | Show recent messages |
@@ -295,7 +296,7 @@ The CLI includes a built-in hook handler that replaces `comms.sh` (no `jq` depen
 }
 ```
 
-Hooks are generated in the **project directory** (`.claude/settings.json`), not globally, so anyone cloning the repo gets hooks automatically.
+Hooks are generated per-machine by `auto-agents init` into each worktree's `.claude/settings.json`. Since `.claude/` is typically `.gitignore`d, each developer runs the init wizard to generate their own hooks.
 
 ## Read More
 

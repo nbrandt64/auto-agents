@@ -34,7 +34,24 @@ NEVER use `--admin` to bypass branch protection.
 NEVER manually set the Copilot Review Gate status via `gh api statuses`.
 
 The review gate workflow checks for unresolved threads via GraphQL — not just comment count.
-If the gate is stuck PENDING, push an empty commit to re-trigger; do NOT set the status manually.
+If the gate is stuck PENDING, use `gh run rerun` to re-trigger the workflow; do NOT push empty commits or set the status manually.
+
+## Stale Branch Cleanup (Daily)
+
+Once per day, clean up stale local branches that have been merged or deleted on remote:
+
+```bash
+# Prune remote-tracking branches that no longer exist
+git fetch --prune
+
+# Delete local branches whose upstream is gone
+git branch -vv | grep ': gone]' | awk '{print $1}' | xargs -r git branch -D
+
+# Delete local branches already merged into the default branch
+git branch --merged {{DEFAULT_BRANCH}} | grep -v '^\*\|{{DEFAULT_BRANCH}}\|agent/' | xargs -r git branch -d
+```
+
+**Do NOT delete `agent/*` parking branches** — those are persistent worktree branches.
 
 ## Stale Branch Cleanup (Daily)
 

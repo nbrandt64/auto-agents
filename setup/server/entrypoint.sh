@@ -3,11 +3,11 @@ set -e
 
 echo "Waiting for DynamoDB Local..."
 while ! python3 -c "
-import boto3, sys
+import boto3, os, sys
 try:
     client = boto3.client('dynamodb',
-        endpoint_url='${DYNAMODB_ENDPOINT:-http://dynamodb-local:8000}',
-        region_name='${AWS_REGION:-us-east-1}',
+        endpoint_url=os.environ.get('DYNAMODB_ENDPOINT', 'http://dynamodb-local:8000'),
+        region_name=os.environ.get('AWS_REGION', 'us-east-1'),
         aws_access_key_id='local',
         aws_secret_access_key='local')
     client.list_tables()
